@@ -67,7 +67,7 @@ function onSaveNew(rSource, rTarget, rRoll)
     if nConSave >= nDC then
         --Debug.chat("Undead Fortitude save was made!  DC:" .. nDC .. "  Roll:" .. nConSave)
         nDamage = nAllHP - aLastUndeadFortitudeRoll.nWounds - 1
-        local sDamage = string.gsub(aLastUndeadFortitudeRoll.sDamage, "=%d+", "=" .. nDamage)
+        local sDamage = string.gsub(aLastUndeadFortitudeRoll.sDamage, "=%-?%d+", "=" .. nDamage)
         if isClientFGU() then
             rRoll.nTotal = nDamage
             rRoll.sDesc = sDamage
