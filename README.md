@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-UndeadFortitude v1.0, by Justin Freitas
+Undead Fortitude v1.0, by Justin Freitas
 
 ReadMe and Usage Notes
 
