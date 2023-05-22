@@ -176,6 +176,16 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
 		nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
 		nWounds = DB.getValue(nodeTarget, "wounds", 0)
         aTraits = DB.getChildren(nodeTarget, "traits")
+	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(rTarget, "vehicle") then
+		if (rRoll.sSubtargetPath or "") ~= "" then
+			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0);
+			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "wounds"), 0);
+			nTempHP = 0;
+		else
+			nTotalHP = DB.getValue(nodeTarget, "hptotal", 0);
+			nTempHP = DB.getValue(nodeTarget, "hptemp", 0);
+			nWounds = DB.getValue(nodeTarget, "wounds", 0);
+		end
 	else
 		return
 	end
