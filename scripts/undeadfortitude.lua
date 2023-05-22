@@ -120,7 +120,11 @@ function applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
         end
     end
 
-    if hasUndeadFortitude and not EffectManager5E.hasEffect(rTarget, "Unconscious") and nTotalHP > nWounds then
+    if hasUndeadFortitude
+       and not string.find(sDamage, "%[TYPE:.*radiant.*%]")
+       and not string.find(sDamage, "%[CRITICAL%]")
+       and not EffectManager5E.hasEffect(rTarget, "Unconscious")
+       and nTotalHP > nWounds then
         local rRoll = { }
         rRoll.sType = "save"
         rRoll.aDice = { "d20" }
