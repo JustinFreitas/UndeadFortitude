@@ -15,7 +15,7 @@ function onInit()
         else
             ActionDamage.applyDamage = applyDamage
         end
-        ActionsManager.registerResultHandler("save", onSaveNew);
+        ActionsManager.registerResultHandler("save", onSaveNew)
     end
 end
 
@@ -39,33 +39,32 @@ function onSaveNew(rSource, rTarget, rRoll)
 
     local nDamage = aLastUndeadFortitudeRoll.nDamage
     local nDC = 5 + nDamage
-    local msgShort = {font = "msgfont"};
-	local msgLong = {font = "msgfont"};
+    local msgShort = {font = "msgfont"}
+	local msgLong = {font = "msgfont"}
 
-	msgShort.text = "Undead Fortitude";
-	msgLong.text = "Undead Fortitude [" .. nConSave ..  "]";
-    msgLong.text = msgLong.text .. "[vs. DC " .. nDC .. "]";
-	msgShort.text = msgShort.text .. " ->";
-	msgLong.text = msgLong.text .. " ->";
-    msgShort.text = msgShort.text .. " [for " .. ActorManager.getDisplayName(rSource) .. "]";
-    msgLong.text = msgLong.text .. " [for " .. ActorManager.getDisplayName(rSource) .. "]";
+	msgShort.text = "Undead Fortitude"
+	msgLong.text = "Undead Fortitude [" .. nConSave ..  "]"
+    msgLong.text = msgLong.text .. "[vs. DC " .. nDC .. "]"
+	msgShort.text = msgShort.text .. " ->"
+	msgLong.text = msgLong.text .. " ->"
+    msgShort.text = msgShort.text .. " [for " .. ActorManager.getDisplayName(rSource) .. "]"
+    msgLong.text = msgLong.text .. " [for " .. ActorManager.getDisplayName(rSource) .. "]"
 
-	msgShort.icon = "roll_cast";
+	msgShort.icon = "roll_cast"
 
 	if nConSave >= nDC then
-		msgLong.text = msgLong.text .. " [SUCCESS]";
+		msgLong.text = msgLong.text .. " [SUCCESS]"
 	else
-		msgLong.text = msgLong.text .. " [FAILURE]";
+		msgLong.text = msgLong.text .. " [FAILURE]"
 	end
 
-	local bSecret = aLastUndeadFortitudeRoll.bSecret;
+	local bSecret = aLastUndeadFortitudeRoll.bSecret
     ActionsManager.outputResult(bSecret, rSource, nil, msgLong, msgShort)
 
-    -- APPLY THE DAMAGE BASED ON THE Undead Fortitude SAVE
+    -- Undead Fortitude processing
     local nAllHP = aLastUndeadFortitudeRoll.nTotalHP + aLastUndeadFortitudeRoll.nTempHP
-    --Debug.chat(rSource, rTarget, rRoll)
     if nConSave >= nDC then
-        --Debug.chat("Undead Fortitude save was made!  DC:" .. nDC .. "  Roll:" .. nConSave)
+        -- Undead Fortitude save was made!
         nDamage = nAllHP - aLastUndeadFortitudeRoll.nWounds - 1
         local sDamage = string.gsub(aLastUndeadFortitudeRoll.sDamage, "=%-?%d+", "=" .. nDamage)
         if isClientFGU() then
@@ -76,7 +75,7 @@ function onSaveNew(rSource, rTarget, rRoll)
             ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nDamage)
         end
     else
-        --Debug.chat("Undead Fortitude save was NOT made.  DC:" .. nDC .. "  Roll:" .. nConSave)
+        -- Undead Fortitude save was NOT made
         if aLastUndeadFortitudeRoll.nWounds < aLastUndeadFortitudeRoll.nTotalHP then -- TODO:  Is this right or use the Unconscious effect?
             if isClientFGU() then
                 ActionDamage_applyDamage(rSource, rTarget, rRoll)
@@ -89,10 +88,10 @@ end
 
 --In FGU, the sig to this function is just rSource, rTarget, rRoll.
 function applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
-	local nTotalHP, nTempHP, nWounds, aTraits;
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget);
+	local nTotalHP, nTempHP, nWounds, aTraits
+	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	if not nodeTarget then
-		return;
+		return
 	end
 
     local hasUndeadFortitude = false
@@ -159,10 +158,10 @@ end
 
 --In FGU, the sig to this function is just rSource, rTarget, rRoll...  rRoll.bSecret, rRoll.sDesc, rRoll.nTotal
 function applyDamage_FGU(rSource, rTarget, rRoll)
-	local nTotalHP, nTempHP, nWounds, aTraits;
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget);
+	local nTotalHP, nTempHP, nWounds, aTraits
+	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	if not nodeTarget then
-		return;
+		return
 	end
 
     local hasUndeadFortitude = false
@@ -178,13 +177,13 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
         aTraits = DB.getChildren(nodeTarget, "traits")
 	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(rTarget, "vehicle") then
 		if (rRoll.sSubtargetPath or "") ~= "" then
-			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0);
-			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "wounds"), 0);
-			nTempHP = 0;
+			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0)
+			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "wounds"), 0)
+			nTempHP = 0
 		else
-			nTotalHP = DB.getValue(nodeTarget, "hptotal", 0);
-			nTempHP = DB.getValue(nodeTarget, "hptemp", 0);
-			nWounds = DB.getValue(nodeTarget, "wounds", 0);
+			nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
+			nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
+			nWounds = DB.getValue(nodeTarget, "wounds", 0)
 		end
 	else
 		return

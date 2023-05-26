@@ -2,3 +2,4 @@ readme.txt
 scripts/.luacheckrc
 build/out/UndeadFortitude.ext
 build/out/UndeadFortitude.zip
+.vscode/settings.json
