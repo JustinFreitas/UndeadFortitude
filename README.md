@@ -10,7 +10,7 @@ When damage is applied to an NPC or PC with the Undead Fortitude trait, the targ
 
 There is a radial menu option in the 11 o'clock position when right clicking on a CT actor that allows for Undead Fortitude to be applied to an Unconscious actor.  If invoked, it will leave the actor with one wound remaining until max hp and also remove the Unconscious and Prone effects if they exist.  This will work even if the target doesn't have the Undead Fortitude trait.
 
-A chat command /uf was added to do the application to apply the Undead Fortitude result to the specified Combat Tracker actor (case sensitive).  The first match found will be used.  This will work even if the target doesn't have the Undead Fortitude trait.  For example: /uf Zombie
+A chat command /uf (or /undeadfortitude) was added to do the application to apply the Undead Fortitude result to the specified Combat Tracker actor (case sensitive).  The first match found will be used.  This will work even if the target doesn't have the Undead Fortitude trait.  For example: /uf Zombie
 
 Changelist:
 - v1.0 - Initial version.

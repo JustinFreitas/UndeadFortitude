@@ -11,7 +11,8 @@ function onInit()
     USER_ISHOST = User.isHost()
 
 	if USER_ISHOST then
-		Comm.registerSlashHandler("uf", processChatCommand) -- a command for status of current CT actor and also for subcommands (i.e. clear).
+		Comm.registerSlashHandler("uf", processChatCommand)
+		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
         ActionsManager.registerResultHandler("save", onSaveNew)
         ActionDamage_applyDamage = ActionDamage.applyDamage
         if isClientFGU() then
