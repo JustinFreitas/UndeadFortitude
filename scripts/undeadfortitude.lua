@@ -3,11 +3,17 @@ USER_ISHOST = false
 
 local ActionDamage_applyDamage
 local aUndeadFortitudeRollQueue = {}
+local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
+local UNDEAD_FORTITUDE = "Undead Fortitude"
+local UNDEAD_FORTITUDE_LOWER = UNDEAD_FORTITUDE:lower()
 
 function onInit()
     USER_ISHOST = User.isHost()
 
 	if USER_ISHOST then
+		Comm.registerSlashHandler("uf", processChatCommand)
+		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
+        ActionsManager.registerResultHandler("save", onSaveNew)
         ActionDamage_applyDamage = ActionDamage.applyDamage
         if isClientFGU() then
             ActionDamage.applyDamage = applyDamage_FGU
@@ -15,8 +21,62 @@ function onInit()
         else
             ActionDamage.applyDamage = applyDamage
         end
-        ActionsManager.registerResultHandler("save", onSaveNew)
     end
+end
+
+function getCTNodeForDisplayName(sDisplayName)
+	for _,nodeCT in pairs(DB.getChildren(CombatManager.CT_LIST)) do
+        if ActorManager.getDisplayName(nodeCT) == sDisplayName then
+            return nodeCT
+        end
+    end
+
+    return nil
+end
+
+function processChatCommand(_, sParams)
+    local nodeCT = getCTNodeForDisplayName(sParams)
+    if nodeCT == nil then
+        displayChatMessage(sParams .. " was not found in the Combat Tracker, skipping Undead Fortitude application.")
+        return
+    end
+
+    applyUndeadFortitude(nodeCT)
+end
+
+function displayChatMessage(sFormattedText)
+	if not sFormattedText then return end
+
+	local msg = {font = "msgfont", icon = "undeadfortitude_icon", secret = false, text = sFormattedText}
+    Comm.addChatMessage(msg) -- local, not broadcast
+end
+
+function applyUndeadFortitude(nodeCT)
+    local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(nodeCT)
+	if not nodeTarget then
+		return
+	end
+
+    local sWounds
+    if sTargetNodeType == "pc" then
+        sWounds = "hp.wounds"
+    elseif sTargetNodeType == "ct" then
+        sWounds = "wounds"
+	else
+		return
+	end
+
+    local sDisplayName = ActorManager.getDisplayName(nodeTarget)
+    if not EffectManager5E.hasEffect(nodeTarget, UNCONSCIOUS_EFFECT_LABEL) then
+        displayChatMessage(sDisplayName .. " is not an unconscious actor, skipping Undead Fortitude application.")
+        return
+    end
+
+    local nWounds = DB.getValue(nodeTarget, sWounds, 0) - 1
+    DB.setValue(nodeTarget, sWounds, "number", nWounds)
+    EffectManager.removeEffect(nodeTarget, UNCONSCIOUS_EFFECT_LABEL)
+    EffectManager.removeEffect(nodeTarget, "Prone")
+    displayChatMessage("Undead Fortitude was applied to " .. sDisplayName .. ".")
 end
 
 function isClientFGU()
@@ -24,7 +84,7 @@ function isClientFGU()
 end
 
 function onSaveNew(rSource, rTarget, rRoll)
-    if not string.find(rRoll.sDesc, "Undead Fortitude") then
+    if not string.find(rRoll.sDesc, UNDEAD_FORTITUDE) then
         ActionSave.onSave(rSource, rTarget, rRoll)
         return
     end
@@ -42,8 +102,8 @@ function onSaveNew(rSource, rTarget, rRoll)
     local msgShort = {font = "msgfont"}
 	local msgLong = {font = "msgfont"}
 
-	msgShort.text = "Undead Fortitude"
-	msgLong.text = "Undead Fortitude [" .. nConSave ..  "]"
+	msgShort.text = UNDEAD_FORTITUDE
+	msgLong.text = UNDEAD_FORTITUDE .. " [" .. nConSave ..  "]"
     msgLong.text = msgLong.text .. "[vs. DC " .. nDC .. "]"
 	msgShort.text = msgShort.text .. " ->"
 	msgLong.text = msgLong.text .. " ->"
@@ -112,7 +172,7 @@ function applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
     local nAllHP = nTotalHP + nTempHP
     if nWounds + nTotal >= nAllHP then
         for _, trait in pairs(aTraits) do
-            if DB.getText(trait, "name"):lower() == "undead fortitude" then
+            if DB.getText(trait, "name"):lower() == UNDEAD_FORTITUDE_LOWER then
                 hasUndeadFortitude = true
                 break
             end
@@ -122,7 +182,7 @@ function applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
     if hasUndeadFortitude
        and not string.find(sDamage, "%[TYPE:.*radiant.*%]")
        and not string.find(sDamage, "%[CRITICAL%]")
-       and not EffectManager5E.hasEffect(rTarget, "Unconscious")
+       and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL)
        and nTotalHP > nWounds then
         local rRoll = { }
         rRoll.sType = "save"
@@ -192,14 +252,14 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
     local nAllHP = nTotalHP + nTempHP
     if nWounds + rRoll.nTotal >= nAllHP then
         for _, trait in pairs(aTraits) do
-            if DB.getText(trait, "name"):lower() == "undead fortitude" then
+            if DB.getText(trait, "name"):lower() == UNDEAD_FORTITUDE_LOWER then
                 hasUndeadFortitude = true
                 break
             end
         end
     end
 
-    if hasUndeadFortitude and not EffectManager5E.hasEffect(rTarget, "Unconscious") and nTotalHP > nWounds then
+    if hasUndeadFortitude and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL) and nTotalHP > nWounds then
         local rUndeadFortitudeRoll = { }
         rUndeadFortitudeRoll.sType = "save"
         rUndeadFortitudeRoll.aDice = { "d20" }
