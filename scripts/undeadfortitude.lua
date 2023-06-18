@@ -122,8 +122,7 @@ function onSaveNew(rSource, rTarget, rRoll)
 		msgLong.text = msgLong.text .. " [FAILURE]"
 	end
 
-	local bSecret = rRoll.bSecret ~= nil and rRoll.bSecret == "true"
-    ActionsManager.outputResult(bSecret, rSource, nil, msgLong, msgShort)
+    ActionsManager.outputResult(rRoll.bSecret, rSource, nil, msgLong, msgShort)
 
     -- Undead Fortitude processing
     local nAllHP = rRoll.nTotalHP + rRoll.nTempHP
@@ -136,7 +135,7 @@ function onSaveNew(rSource, rTarget, rRoll)
             rRoll.sDesc = sDamage
             ActionDamage_applyDamage(rSource, rTarget, rRoll)
         else
-            ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nDamage)
+            ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, sDamage, nDamage)
         end
     else
         -- Undead Fortitude save was NOT made
@@ -144,7 +143,7 @@ function onSaveNew(rSource, rTarget, rRoll)
             if isClientFGU() then
                 ActionDamage_applyDamage(rSource, rTarget, rRoll)
             else
-                ActionDamage_applyDamage(rSource, rTarget, bSecret, rRoll.sDamage, nDamage)
+                ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, rRoll.sDamage, nDamage)
             end
         end
     end
@@ -301,11 +300,10 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
             rRoll.sDesc = rRoll.sDesc .. " [DIS]"
         end
 
-        rRoll.bSecret = tostring(false) -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
-        rRoll.bUndeadFortitude = tostring(true)
+        rRoll.bSecret = false -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
+        rRoll.bUndeadFortitude = true
         rRoll.nDamage = nTotal
         rRoll.sDamage = sDamage
-        rRoll.bSecret = tostring(false)
         rRoll.nTotalHP = aFortitudeData.nTotalHP
         rRoll.nTempHP = aFortitudeData.nTempHP
         rRoll.nWounds = aFortitudeData.nWounds
