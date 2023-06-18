@@ -2,7 +2,16 @@
 USER_ISHOST = false
 
 local ActionDamage_applyDamage
+local DEFAULT_UNDEAD_FORTITUDE_DC_MOD = 5
+local HP_TEMPORARY = "hp.temporary"
+local HP_TOTAL = "hp.total"
+local HP_WOUNDS = "hp.wounds"
+local HPTEMP = "hptemp"
+local HPTOTAL = "hptotal"
+local MSGFONT = "msgfont"
+local NIL = "nil"
 local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
+local WOUNDS = "wounds"
 
 function onInit()
     USER_ISHOST = User.isHost()
@@ -43,7 +52,7 @@ end
 function displayChatMessage(sFormattedText)
 	if not sFormattedText then return end
 
-	local msg = {font = "msgfont", icon = "undeadfortitude_icon", secret = false, text = sFormattedText}
+	local msg = {font = MSGFONT, icon = "undeadfortitude_icon", secret = false, text = sFormattedText}
     Comm.addChatMessage(msg) -- local, not broadcast
 end
 
@@ -80,7 +89,7 @@ function isClientFGU()
 end
 
 function onSaveNew(rSource, rTarget, rRoll)
-    if rRoll.bUndeadFortitude == nil or rRoll.bUndeadFortitude == "false" then
+    if rRoll.bUndeadFortitude == nil then
         ActionSave.onSave(rSource, rTarget, rRoll)
         return
     end
@@ -90,22 +99,22 @@ function onSaveNew(rSource, rTarget, rRoll)
 	Comm.deliverChatMessage(rMessage)
 
     local nModDC
-    if rRoll.nModDC == nil or rRoll.nModDC == "nil" then
-        nModDC = 5 -- Undead fortitude default
+    if rRoll.nModDC == nil or rRoll.nModDC == NIL then
+        nModDC = DEFAULT_UNDEAD_FORTITUDE_DC_MOD
     else
         nModDC = tonumber(rRoll.nModDC)
     end
 
     local nDamage = rRoll.nDamage
     local nDC
-    if rRoll.nStaticDC == nil or rRoll.nStaticDC == "nil" then
+    if rRoll.nStaticDC == nil or rRoll.nStaticDC == NIL then
         nDC = nModDC + nDamage
     else
         nDC = tonumber(rRoll.nStaticDC)
     end
 
-    local msgShort = {font = "msgfont"}
-	local msgLong = {font = "msgfont"}
+    local msgShort = {font = MSGFONT}
+	local msgLong = {font = MSGFONT}
     local nConSave = ActionsManager.total(rRoll)
 	msgShort.text = rRoll.sTrimmedFortitudeTraitNameForSave
 	msgLong.text = rRoll.sTrimmedFortitudeTraitNameForSave .. " [" .. nConSave ..  "]"
@@ -164,7 +173,7 @@ function hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
 	end
 
     for _, aTrait in pairs(aTraits) do
-        local aDecomposedTraitName = decomposeTraitName(aTrait)
+        local aDecomposedTraitName = getDecomposedTraitName(aTrait)
         if aDecomposedTraitName.nFortitudeStart ~= nil then
             return getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rTarget, rRoll)
         end
@@ -172,17 +181,17 @@ function hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
 end
 
 function getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
-    local nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
-    local nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
-    local nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
+    local nTotalHP = DB.getValue(nodeTarget, HP_TOTAL, 0)
+    local nTempHP = DB.getValue(nodeTarget, HP_TEMPORARY, 0)
+    local nWounds = DB.getValue(nodeTarget, HP_WOUNDS, 0)
 	if sTargetNodeType == "pc" then
-		nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
-		nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
-		nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
+		nTotalHP = DB.getValue(nodeTarget, HP_TOTAL, 0)
+		nTempHP = DB.getValue(nodeTarget, HP_TEMPORARY, 0)
+		nWounds = DB.getValue(nodeTarget, HP_WOUNDS, 0)
     elseif sTargetNodeType == "ct" then
-		nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
-		nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
-		nWounds = DB.getValue(nodeTarget, "wounds", 0)
+		nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
+		nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
+		nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
 	end
 
     return {
@@ -193,26 +202,26 @@ function getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
 end
 
 function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
-    local nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
-    local nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
-    local nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
+    local nTotalHP = DB.getValue(nodeTarget, HP_TOTAL, 0)
+    local nTempHP = DB.getValue(nodeTarget, HP_TEMPORARY, 0)
+    local nWounds = DB.getValue(nodeTarget, HP_WOUNDS, 0)
 	if sTargetNodeType == "pc" then
-		nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
-		nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
-		nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
+		nTotalHP = DB.getValue(nodeTarget, HP_TOTAL, 0)
+		nTempHP = DB.getValue(nodeTarget, HP_TEMPORARY, 0)
+		nWounds = DB.getValue(nodeTarget, HP_WOUNDS, 0)
     elseif sTargetNodeType == "ct" then
-		nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
-		nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
-		nWounds = DB.getValue(nodeTarget, "wounds", 0)
+		nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
+		nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
+		nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
 	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(rTarget, "vehicle") then
 		if (rRoll.sSubtargetPath or "") ~= "" then
 			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0)
-			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "wounds"), 0)
+			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, WOUNDS), 0)
 			nTempHP = 0
 		else
-			nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
-			nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
-			nWounds = DB.getValue(nodeTarget, "wounds", 0)
+			nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
+			nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
+			nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
 		end
 	end
 
@@ -253,7 +262,7 @@ function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTa
     }
 end
 
-function decomposeTraitName(aTrait)
+function getDecomposedTraitName(aTrait)
     local sTraitName = DB.getText(aTrait, "name")
     local sTraitNameLower = sTraitName:lower()
     local nFortitudeStart, nFortitudeEnd = sTraitNameLower:find("fortitude")
