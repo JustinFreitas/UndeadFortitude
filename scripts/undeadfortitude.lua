@@ -66,7 +66,7 @@ function applyUndeadFortitude(nodeCT)
 
     local sDisplayName = ActorManager.getDisplayName(nodeTarget)
     if not EffectManager5E.hasEffect(nodeTarget, UNCONSCIOUS_EFFECT_LABEL) then
-        displayChatMessage(sDisplayName .. " is not an unconscious actor, skipping Undead Fortitude application.")
+        displayChatMessage(sDisplayName .. " is not an unconscious actor, skipping Fortitude application.")
         return
     end
 
@@ -74,7 +74,7 @@ function applyUndeadFortitude(nodeCT)
     DB.setValue(nodeTarget, sWounds, "number", nWounds)
     EffectManager.removeEffect(nodeTarget, UNCONSCIOUS_EFFECT_LABEL)
     EffectManager.removeEffect(nodeTarget, "Prone")
-    displayChatMessage("Undead Fortitude was applied to " .. sDisplayName .. ".")
+    displayChatMessage("Fortitude was applied to " .. sDisplayName .. ".")
 end
 
 function isClientFGU()
@@ -82,7 +82,12 @@ function isClientFGU()
 end
 
 function onSaveNew(rSource, rTarget, rRoll)
-    if not string.find(rRoll.sDesc, UNDEAD_FORTITUDE) then
+    local sFortitudeTraitNameForSave = UNDEAD_FORTITUDE
+    if aUndeadFortitudeRollQueue[1] ~= nil then
+        sFortitudeTraitNameForSave = aUndeadFortitudeRollQueue[1].sFortitudeTraitNameForSave
+    end
+
+    if not string.find(rRoll.sDesc, sFortitudeTraitNameForSave) then
         ActionSave.onSave(rSource, rTarget, rRoll)
         return
     end
@@ -109,8 +114,8 @@ function onSaveNew(rSource, rTarget, rRoll)
     local msgShort = {font = "msgfont"}
 	local msgLong = {font = "msgfont"}
 
-	msgShort.text = UNDEAD_FORTITUDE -- TODO: In future, used parsed first word.  For example, Death instaed of Undead.
-	msgLong.text = UNDEAD_FORTITUDE .. " [" .. nConSave ..  "]"
+	msgShort.text = sFortitudeTraitNameForSave
+	msgLong.text = sFortitudeTraitNameForSave .. " [" .. nConSave ..  "]"
     msgLong.text = msgLong.text .. "[vs. DC " .. nDC .. "]"
 	msgShort.text = msgShort.text .. " ->"
 	msgLong.text = msgLong.text .. " ->"
@@ -143,7 +148,7 @@ function onSaveNew(rSource, rTarget, rRoll)
         end
     else
         -- Undead Fortitude save was NOT made
-        if aLastUndeadFortitudeRoll.nWounds < aLastUndeadFortitudeRoll.nTotalHP then -- TODO:  Is this right or use the Unconscious effect?
+        if aLastUndeadFortitudeRoll.nWounds < aLastUndeadFortitudeRoll.nTotalHP then
             if isClientFGU() then
                 ActionDamage_applyDamage(rSource, rTarget, rRoll)
             else
@@ -175,7 +180,7 @@ function hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
     end
 end
 
-function getTargetHealthData(sTargetNodeType, nodeTarget)
+function getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
     local nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
     local nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
     local nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
@@ -229,19 +234,19 @@ end
 
 function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rTarget, rRoll)
     local bUndead = false
-    if trim(aDecomposedTraitName.sPrefixLower):match("undead") then
+    if trim(aDecomposedTraitName.sFortitudeTraitPrefix):lower():match("undead") then
         bUndead = true
     end
 
-    local sTrimmedSuffix = trim(aDecomposedTraitName.sSuffixLower)
-    local nStaticDC = tonumber(sTrimmedSuffix:match("dc%s*(%d+)"))
-    local nModDC = tonumber(sTrimmedSuffix:match("mod%s*(%d+)"))
-    local bNoMods = trim(sTrimmedSuffix):find("no%s*mods")
+    local sTrimmedSuffixLower = trim(aDecomposedTraitName.sFortitudeTraitSuffix):lower()
+    local nStaticDC = tonumber(sTrimmedSuffixLower:match("dc%s*(%d+)"))
+    local nModDC = tonumber(sTrimmedSuffixLower:match("mod%s*(%d+)"))
+    local bNoMods = trim(sTrimmedSuffixLower):find("no%s*mods")
     local aTargetHealthData
     if isClientFGU() then
         aTargetHealthData = getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
     else
-        aTargetHealthData = getTargetHealthData(sTargetNodeType, nodeTarget)
+        aTargetHealthData = getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
     end
 
     return {
@@ -252,7 +257,8 @@ function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTa
         bUndead = bUndead,
         nStaticDC = nStaticDC,
         nModDC = nModDC,
-        bNoMods = bNoMods
+        bNoMods = bNoMods,
+        sFortitudeTraitNameForSave = aDecomposedTraitName.sFortitudeTraitNameForSave
     }
 end
 
@@ -260,10 +266,11 @@ function decomposeTraitName(aTrait)
     local sTraitName = DB.getText(aTrait, "name")
     local sTraitNameLower = sTraitName:lower()
     local nFortitudeStart, nFortitudeEnd = sTraitNameLower:find("fortitude")
-    local sPrefixLower, sSuffixLower
+    local sFortitudeTraitPrefix, sFortitudeTraitSuffix, sFortitudeTraitNameForSave
     if nFortitudeStart ~= nil and nFortitudeEnd ~= nil then
-        sPrefixLower = sTraitNameLower:sub(1, nFortitudeStart - 1)
-        sSuffixLower = sTraitNameLower:sub(nFortitudeEnd + 1)
+        sFortitudeTraitPrefix = sTraitName:sub(1, nFortitudeStart - 1)
+        sFortitudeTraitSuffix = sTraitName:sub(nFortitudeEnd + 1)
+        sFortitudeTraitNameForSave = trim(sTraitName:sub(1, nFortitudeEnd))
     end
 
     return {
@@ -271,24 +278,25 @@ function decomposeTraitName(aTrait)
         sTraitNameLower = sTraitNameLower,
         nFortitudeStart = nFortitudeStart,
         nFortitudeEnd = nFortitudeEnd,
-        sPrefixLower = sPrefixLower,
-        sSuffixLower = sSuffixLower
+        sFortitudeTraitPrefix = sFortitudeTraitPrefix,
+        sFortitudeTraitSuffix = sFortitudeTraitSuffix,
+        sFortitudeTraitNameForSave = sFortitudeTraitNameForSave
     }
 end
 
 function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
     local nAllHP = aFortitudeData.nTotalHP + aFortitudeData.nTempHP
     if aFortitudeData.nWounds + nTotal >= nAllHP
-       and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]")) -- allow for 'no radiant' in trait modifier (i.e. Undead Fortitude (no mods) or Undead Fortitude (MOD 11, no mods))
-       and (aFortitudeData.bNoMods or not string.find(sDamage, "%[CRITICAL%]")) -- allow for 'no critical' in trait modifier (i.e. Undead Fortitude (no mods) or Undead Fortitude (MOD 11, no mods))
-       and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL)-- allow for 'no unconscious' in trait modifier (i.e. Undead Fortitude (no mods) or Undead Fortitude (MOD 11, no mods))
+       and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]"))
+       and (aFortitudeData.bNoMods or not string.find(sDamage, "%[CRITICAL%]"))
+       and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL)
        and aFortitudeData.nTotalHP > aFortitudeData.nWounds then
         local rRoll = { }
         rRoll.sType = "save"
         rRoll.aDice = { "d20" }
         local nMod, bADV, bDIS, sAddText = ActorManager5E.getSave(rTarget, "constitution")
         rRoll.nMod = nMod
-        rRoll.sDesc = "[SAVE] Constitution for Undead Fortitude" -- TODO: Adv/Dis from effects Breaks w/out Constitution in desc.  Should it be localized?  In future, allow for word replacement.
+        rRoll.sDesc = "[SAVE] Constitution for " .. aFortitudeData.sFortitudeTraitNameForSave
         if sAddText and sAddText ~= "" then
             rRoll.sDesc = rRoll.sDesc .. " " .. sAddText
         end
@@ -311,13 +319,13 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
         aLastUndeadFortitudeRoll.nWounds = aFortitudeData.nWounds
         aLastUndeadFortitudeRoll.nModDC = aFortitudeData.nModDC
         aLastUndeadFortitudeRoll.nStaticDC = aFortitudeData.nStaticDC
+        aLastUndeadFortitudeRoll.sFortitudeTraitNameForSave = aFortitudeData.sFortitudeTraitNameForSave
         table.insert(aUndeadFortitudeRollQueue, aLastUndeadFortitudeRoll)
         ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
         return true
     end
 end
 
---In FGU, the sig to this function is just rSource, rTarget, rRoll.
 function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
 	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	if not nodeTarget then return end
@@ -333,7 +341,6 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
     end
 end
 
---In FGU, the sig to this function is just rSource, rTarget, rRoll...  rRoll.bSecret, rRoll.sDesc, rRoll.nTotal
 function applyDamage_FGU(rSource, rTarget, rRoll)
 	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	if not nodeTarget then return end
