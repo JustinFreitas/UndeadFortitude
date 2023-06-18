@@ -5,7 +5,6 @@ local ActionDamage_applyDamage
 local aUndeadFortitudeRollQueue = {}
 local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
 local UNDEAD_FORTITUDE = "Undead Fortitude"
-local UNDEAD_FORTITUDE_LOWER = UNDEAD_FORTITUDE:lower()
 
 function onInit()
     USER_ISHOST = User.isHost()
@@ -17,9 +16,8 @@ function onInit()
         ActionDamage_applyDamage = ActionDamage.applyDamage
         if isClientFGU() then
             ActionDamage.applyDamage = applyDamage_FGU
-
         else
-            ActionDamage.applyDamage = applyDamage
+            ActionDamage.applyDamage = applyDamage_FGC
         end
     end
 end
@@ -98,11 +96,20 @@ function onSaveNew(rSource, rTarget, rRoll)
     if aLastUndeadFortitudeRoll == nil then return end
 
     local nDamage = aLastUndeadFortitudeRoll.nDamage
-    local nDC = 5 + nDamage
+    local nModDC = 5
+    if aLastUndeadFortitudeRoll.nModDC ~= nil then
+        nModDC = aLastUndeadFortitudeRoll.nModDC
+    end
+
+    local nDC = nModDC + nDamage
+    if aLastUndeadFortitudeRoll.nStaticDC ~= nil then
+        nDC = aLastUndeadFortitudeRoll.nStaticDC
+    end
+
     local msgShort = {font = "msgfont"}
 	local msgLong = {font = "msgfont"}
 
-	msgShort.text = UNDEAD_FORTITUDE
+	msgShort.text = UNDEAD_FORTITUDE -- TODO: In future, used parsed first word.  For example, Death instaed of Undead.
 	msgLong.text = UNDEAD_FORTITUDE .. " [" .. nConSave ..  "]"
     msgLong.text = msgLong.text .. "[vs. DC " .. nDC .. "]"
 	msgShort.text = msgShort.text .. " ->"
@@ -146,95 +153,61 @@ function onSaveNew(rSource, rTarget, rRoll)
     end
 end
 
---In FGU, the sig to this function is just rSource, rTarget, rRoll.
-function applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
-	local nTotalHP, nTempHP, nWounds, aTraits
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
-	if not nodeTarget then
-		return
-	end
+function trim(s)
+    return (s:gsub("^%s*(.-)%s*$", "%1"))
+ end
 
-    local hasUndeadFortitude = false
+function hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
+    local aTraits
 	if sTargetNodeType == "pc" then
-		nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
-		nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
-		nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
         aTraits = DB.getChildren(nodeTarget, "traitlist")
     elseif sTargetNodeType == "ct" then
-		nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
-		nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
-		nWounds = DB.getValue(nodeTarget, "wounds", 0)
         aTraits = DB.getChildren(nodeTarget, "traits")
 	else
 		return
 	end
 
-    local nAllHP = nTotalHP + nTempHP
-    if nWounds + nTotal >= nAllHP then
-        for _, trait in pairs(aTraits) do
-            if DB.getText(trait, "name"):lower() == UNDEAD_FORTITUDE_LOWER then
-                hasUndeadFortitude = true
-                break
-            end
+    for _, aTrait in pairs(aTraits) do
+        local aDecomposedTraitName = decomposeTraitName(aTrait)
+        if aDecomposedTraitName.nFortitudeStart ~= nil then
+            return getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rTarget, rRoll)
         end
     end
-
-    if hasUndeadFortitude
-       and not string.find(sDamage, "%[TYPE:.*radiant.*%]")
-       and not string.find(sDamage, "%[CRITICAL%]")
-       and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL)
-       and nTotalHP > nWounds then
-        local rRoll = { }
-        rRoll.sType = "save"
-        rRoll.aDice = { "d20" }
-        local nMod, bADV, bDIS, sAddText = ActorManager5E.getSave(rTarget, "constitution")
-        rRoll.nMod = nMod
-        rRoll.sDesc = "[SAVE] Constitution for Undead Fortitude" -- TODO: Adv/Dis from effects Breaks w/out Constitution in desc.  Should it be localized?
-        if sAddText and sAddText ~= "" then
-            rRoll.sDesc = rRoll.sDesc .. " " .. sAddText
-        end
-        if bADV then
-            rRoll.sDesc = rRoll.sDesc .. " [ADV]"
-        end
-        if bDIS then
-            rRoll.sDesc = rRoll.sDesc .. " [DIS]"
-        end
-
-        rRoll.bSecret = false -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
-        local aLastUndeadFortitudeRoll = {}
-        aLastUndeadFortitudeRoll.nDamage = nTotal
-        aLastUndeadFortitudeRoll.sDamage = sDamage
-        aLastUndeadFortitudeRoll.bSecret = rRoll.bSecret
-        aLastUndeadFortitudeRoll.nTotalHP = nTotalHP
-        aLastUndeadFortitudeRoll.nTempHP = nTempHP
-        aLastUndeadFortitudeRoll.nWounds = nWounds
-        table.insert(aUndeadFortitudeRollQueue, aLastUndeadFortitudeRoll)
-        ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
-        return
-    end
-
-    ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
 end
 
---In FGU, the sig to this function is just rSource, rTarget, rRoll...  rRoll.bSecret, rRoll.sDesc, rRoll.nTotal
-function applyDamage_FGU(rSource, rTarget, rRoll)
-	local nTotalHP, nTempHP, nWounds, aTraits
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
-	if not nodeTarget then
-		return
-	end
-
-    local hasUndeadFortitude = false
+function getTargetHealthData(sTargetNodeType, nodeTarget)
+    local nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
+    local nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
+    local nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
 	if sTargetNodeType == "pc" then
 		nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
 		nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
 		nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
-        aTraits = DB.getChildren(nodeTarget, "traitlist")
     elseif sTargetNodeType == "ct" then
 		nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
 		nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
 		nWounds = DB.getValue(nodeTarget, "wounds", 0)
-        aTraits = DB.getChildren(nodeTarget, "traits")
+	end
+
+    return {
+        nTotalHP = nTotalHP,
+        nTempHP = nTempHP,
+        nWounds = nWounds
+    }
+end
+
+function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
+    local nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
+    local nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
+    local nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
+	if sTargetNodeType == "pc" then
+		nTotalHP = DB.getValue(nodeTarget, "hp.total", 0)
+		nTempHP = DB.getValue(nodeTarget, "hp.temporary", 0)
+		nWounds = DB.getValue(nodeTarget, "hp.wounds", 0)
+    elseif sTargetNodeType == "ct" then
+		nTotalHP = DB.getValue(nodeTarget, "hptotal", 0)
+		nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
+		nWounds = DB.getValue(nodeTarget, "wounds", 0)
 	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(rTarget, "vehicle") then
 		if (rRoll.sSubtargetPath or "") ~= "" then
 			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0)
@@ -245,49 +218,133 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
 			nTempHP = DB.getValue(nodeTarget, "hptemp", 0)
 			nWounds = DB.getValue(nodeTarget, "wounds", 0)
 		end
-	else
-		return
 	end
 
-    local nAllHP = nTotalHP + nTempHP
-    if nWounds + rRoll.nTotal >= nAllHP then
-        for _, trait in pairs(aTraits) do
-            if DB.getText(trait, "name"):lower() == UNDEAD_FORTITUDE_LOWER then
-                hasUndeadFortitude = true
-                break
-            end
-        end
+    return {
+        nTotalHP = nTotalHP,
+        nTempHP = nTempHP,
+        nWounds = nWounds
+    }
+end
+
+function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rTarget, rRoll)
+    local bUndead = false
+    if trim(aDecomposedTraitName.sPrefixLower):match("undead") then
+        bUndead = true
     end
 
-    if hasUndeadFortitude and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL) and nTotalHP > nWounds then
-        local rUndeadFortitudeRoll = { }
-        rUndeadFortitudeRoll.sType = "save"
-        rUndeadFortitudeRoll.aDice = { "d20" }
+    local sTrimmedSuffix = trim(aDecomposedTraitName.sSuffixLower)
+    local nStaticDC = tonumber(sTrimmedSuffix:match("dc%s*(%d+)"))
+    local nModDC = tonumber(sTrimmedSuffix:match("mod%s*(%d+)"))
+    local bNoMods = trim(sTrimmedSuffix):find("no%s*mods")
+    local aTargetHealthData
+    if isClientFGU() then
+        aTargetHealthData = getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
+    else
+        aTargetHealthData = getTargetHealthData(sTargetNodeType, nodeTarget)
+    end
+
+    return {
+        nTotalHP = aTargetHealthData.nTotalHP,
+        nTempHP = aTargetHealthData.nTempHP,
+        nWounds = aTargetHealthData.nWounds,
+        aTraits = aTraits,
+        bUndead = bUndead,
+        nStaticDC = nStaticDC,
+        nModDC = nModDC,
+        bNoMods = bNoMods
+    }
+end
+
+function decomposeTraitName(aTrait)
+    local sTraitName = DB.getText(aTrait, "name")
+    local sTraitNameLower = sTraitName:lower()
+    local nFortitudeStart, nFortitudeEnd = sTraitNameLower:find("fortitude")
+    local sPrefixLower, sSuffixLower
+    if nFortitudeStart ~= nil and nFortitudeEnd ~= nil then
+        sPrefixLower = sTraitNameLower:sub(1, nFortitudeStart - 1)
+        sSuffixLower = sTraitNameLower:sub(nFortitudeEnd + 1)
+    end
+
+    return {
+        sTraitName = sTraitName,
+        sTraitNameLower = sTraitNameLower,
+        nFortitudeStart = nFortitudeStart,
+        nFortitudeEnd = nFortitudeEnd,
+        sPrefixLower = sPrefixLower,
+        sSuffixLower = sSuffixLower
+    }
+end
+
+function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
+    local nAllHP = aFortitudeData.nTotalHP + aFortitudeData.nTempHP
+    if aFortitudeData.nWounds + nTotal >= nAllHP
+       and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]")) -- allow for 'no radiant' in trait modifier (i.e. Undead Fortitude (no mods) or Undead Fortitude (MOD 11, no mods))
+       and (aFortitudeData.bNoMods or not string.find(sDamage, "%[CRITICAL%]")) -- allow for 'no critical' in trait modifier (i.e. Undead Fortitude (no mods) or Undead Fortitude (MOD 11, no mods))
+       and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL)-- allow for 'no unconscious' in trait modifier (i.e. Undead Fortitude (no mods) or Undead Fortitude (MOD 11, no mods))
+       and aFortitudeData.nTotalHP > aFortitudeData.nWounds then
+        local rRoll = { }
+        rRoll.sType = "save"
+        rRoll.aDice = { "d20" }
         local nMod, bADV, bDIS, sAddText = ActorManager5E.getSave(rTarget, "constitution")
-        rUndeadFortitudeRoll.nMod = nMod
-        rUndeadFortitudeRoll.sDesc = "[SAVE] Constitution for Undead Fortitude" -- TODO: Adv/Dis from effects Breaks w/out Constitution in desc.  Should it be localized?
+        rRoll.nMod = nMod
+        rRoll.sDesc = "[SAVE] Constitution for Undead Fortitude" -- TODO: Adv/Dis from effects Breaks w/out Constitution in desc.  Should it be localized?  In future, allow for word replacement.
         if sAddText and sAddText ~= "" then
-            rUndeadFortitudeRoll.sDesc = rUndeadFortitudeRoll.sDesc .. " " .. sAddText
-        end
-        if bADV then
-            rUndeadFortitudeRoll.sDesc = rUndeadFortitudeRoll.sDesc .. " [ADV]"
-        end
-        if bDIS then
-            rUndeadFortitudeRoll.sDesc = rUndeadFortitudeRoll.sDesc .. " [DIS]"
+            rRoll.sDesc = rRoll.sDesc .. " " .. sAddText
         end
 
-        rUndeadFortitudeRoll.bSecret = false -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
+        if bADV then
+            rRoll.sDesc = rRoll.sDesc .. " [ADV]"
+        end
+
+        if bDIS then
+            rRoll.sDesc = rRoll.sDesc .. " [DIS]"
+        end
+
+        rRoll.bSecret = false -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
         local aLastUndeadFortitudeRoll = {}
-        aLastUndeadFortitudeRoll.nDamage = rRoll.nTotal
-        aLastUndeadFortitudeRoll.sDamage = rRoll.sDesc
+        aLastUndeadFortitudeRoll.nDamage = nTotal
+        aLastUndeadFortitudeRoll.sDamage = sDamage
         aLastUndeadFortitudeRoll.bSecret = rRoll.bSecret
-        aLastUndeadFortitudeRoll.nTotalHP = nTotalHP
-        aLastUndeadFortitudeRoll.nTempHP = nTempHP
-        aLastUndeadFortitudeRoll.nWounds = nWounds
+        aLastUndeadFortitudeRoll.nTotalHP = aFortitudeData.nTotalHP
+        aLastUndeadFortitudeRoll.nTempHP = aFortitudeData.nTempHP
+        aLastUndeadFortitudeRoll.nWounds = aFortitudeData.nWounds
+        aLastUndeadFortitudeRoll.nModDC = aFortitudeData.nModDC
+        aLastUndeadFortitudeRoll.nStaticDC = aFortitudeData.nStaticDC
         table.insert(aUndeadFortitudeRollQueue, aLastUndeadFortitudeRoll)
-        ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rUndeadFortitudeRoll)
-        return
+        ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
+        return true
+    end
+end
+
+--In FGU, the sig to this function is just rSource, rTarget, rRoll.
+function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
+	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	if not nodeTarget then return end
+
+    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, nil, nil)
+    local bFortitudeTriggered
+    if aFortitudeData then
+        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
     end
 
-    ActionDamage_applyDamage(rSource, rTarget, rRoll)
+    if not bFortitudeTriggered then
+        ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
+    end
+end
+
+--In FGU, the sig to this function is just rSource, rTarget, rRoll...  rRoll.bSecret, rRoll.sDesc, rRoll.nTotal
+function applyDamage_FGU(rSource, rTarget, rRoll)
+	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	if not nodeTarget then return end
+
+    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
+    local bFortitudeTriggered
+    if aFortitudeData then
+        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rTarget)
+    end
+
+    if not bFortitudeTriggered then
+        ActionDamage_applyDamage(rSource, rTarget, rRoll)
+    end
 end
