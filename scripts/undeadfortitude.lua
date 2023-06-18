@@ -2,9 +2,7 @@
 USER_ISHOST = false
 
 local ActionDamage_applyDamage
-local aUndeadFortitudeRollQueue = {}
 local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
-local UNDEAD_FORTITUDE = "Undead Fortitude"
 
 function onInit()
     USER_ISHOST = User.isHost()
@@ -35,7 +33,7 @@ end
 function processChatCommand(_, sParams)
     local nodeCT = getCTNodeForDisplayName(sParams)
     if nodeCT == nil then
-        displayChatMessage(sParams .. " was not found in the Combat Tracker, skipping Undead Fortitude application.")
+        displayChatMessage(sParams .. " was not found in the Combat Tracker, skipping Fortitude application.")
         return
     end
 
@@ -82,12 +80,7 @@ function isClientFGU()
 end
 
 function onSaveNew(rSource, rTarget, rRoll)
-    local sFortitudeTraitNameForSave = UNDEAD_FORTITUDE
-    if aUndeadFortitudeRollQueue[1] ~= nil then
-        sFortitudeTraitNameForSave = aUndeadFortitudeRollQueue[1].sFortitudeTraitNameForSave
-    end
-
-    if not string.find(rRoll.sDesc, sFortitudeTraitNameForSave) then
+    if rRoll.bUndeadFortitude == nil or rRoll.bUndeadFortitude == "false" then
         ActionSave.onSave(rSource, rTarget, rRoll)
         return
     end
@@ -96,32 +89,31 @@ function onSaveNew(rSource, rTarget, rRoll)
 	local rMessage = ActionsManager.createActionMessage(rSource, rRoll)
 	Comm.deliverChatMessage(rMessage)
 
-    local nConSave = ActionsManager.total(rRoll)
-    local aLastUndeadFortitudeRoll = table.remove(aUndeadFortitudeRollQueue, 1)
-    if aLastUndeadFortitudeRoll == nil then return end
-
-    local nDamage = aLastUndeadFortitudeRoll.nDamage
-    local nModDC = 5
-    if aLastUndeadFortitudeRoll.nModDC ~= nil then
-        nModDC = aLastUndeadFortitudeRoll.nModDC
+    local nModDC
+    if rRoll.nModDC == nil or rRoll.nModDC == "nil" then
+        nModDC = 5 -- Undead fortitude default
+    else
+        nModDC = tonumber(rRoll.nModDC)
     end
 
-    local nDC = nModDC + nDamage
-    if aLastUndeadFortitudeRoll.nStaticDC ~= nil then
-        nDC = aLastUndeadFortitudeRoll.nStaticDC
+    local nDamage = rRoll.nDamage
+    local nDC
+    if rRoll.nStaticDC == nil or rRoll.nStaticDC == "nil" then
+        nDC = nModDC + nDamage
+    else
+        nDC = tonumber(rRoll.nStaticDC)
     end
 
     local msgShort = {font = "msgfont"}
 	local msgLong = {font = "msgfont"}
-
-	msgShort.text = sFortitudeTraitNameForSave
-	msgLong.text = sFortitudeTraitNameForSave .. " [" .. nConSave ..  "]"
+    local nConSave = ActionsManager.total(rRoll)
+	msgShort.text = rRoll.sTrimmedFortitudeTraitNameForSave
+	msgLong.text = rRoll.sTrimmedFortitudeTraitNameForSave .. " [" .. nConSave ..  "]"
     msgLong.text = msgLong.text .. "[vs. DC " .. nDC .. "]"
 	msgShort.text = msgShort.text .. " ->"
 	msgLong.text = msgLong.text .. " ->"
     msgShort.text = msgShort.text .. " [for " .. ActorManager.getDisplayName(rSource) .. "]"
     msgLong.text = msgLong.text .. " [for " .. ActorManager.getDisplayName(rSource) .. "]"
-
 	msgShort.icon = "roll_cast"
 
 	if nConSave >= nDC then
@@ -130,15 +122,15 @@ function onSaveNew(rSource, rTarget, rRoll)
 		msgLong.text = msgLong.text .. " [FAILURE]"
 	end
 
-	local bSecret = aLastUndeadFortitudeRoll.bSecret
+	local bSecret = rRoll.bSecret ~= nil and rRoll.bSecret == "true"
     ActionsManager.outputResult(bSecret, rSource, nil, msgLong, msgShort)
 
     -- Undead Fortitude processing
-    local nAllHP = aLastUndeadFortitudeRoll.nTotalHP + aLastUndeadFortitudeRoll.nTempHP
+    local nAllHP = rRoll.nTotalHP + rRoll.nTempHP
     if nConSave >= nDC then
         -- Undead Fortitude save was made!
-        nDamage = nAllHP - aLastUndeadFortitudeRoll.nWounds - 1
-        local sDamage = string.gsub(aLastUndeadFortitudeRoll.sDamage, "=%-?%d+", "=" .. nDamage)
+        nDamage = nAllHP - rRoll.nWounds - 1
+        local sDamage = string.gsub(rRoll.sDamage, "=%-?%d+", "=" .. nDamage)
         if isClientFGU() then
             rRoll.nTotal = nDamage
             rRoll.sDesc = sDamage
@@ -148,11 +140,11 @@ function onSaveNew(rSource, rTarget, rRoll)
         end
     else
         -- Undead Fortitude save was NOT made
-        if aLastUndeadFortitudeRoll.nWounds < aLastUndeadFortitudeRoll.nTotalHP then
+        if rRoll.nWounds < rRoll.nTotalHP then
             if isClientFGU() then
                 ActionDamage_applyDamage(rSource, rTarget, rRoll)
             else
-                ActionDamage_applyDamage(rSource, rTarget, aLastUndeadFortitudeRoll.bSecret, aLastUndeadFortitudeRoll.sDamage, nDamage)
+                ActionDamage_applyDamage(rSource, rTarget, bSecret, rRoll.sDamage, nDamage)
             end
         end
     end
@@ -239,8 +231,8 @@ function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTa
     end
 
     local sTrimmedSuffixLower = trim(aDecomposedTraitName.sFortitudeTraitSuffix):lower()
-    local nStaticDC = tonumber(sTrimmedSuffixLower:match("dc%s*(%d+)"))
-    local nModDC = tonumber(sTrimmedSuffixLower:match("mod%s*(%d+)"))
+    local nStaticDC = tonumber(sTrimmedSuffixLower:match("dc%s*(-?%d+)"))
+    local nModDC = tonumber(sTrimmedSuffixLower:match("mod%s*(-?%d+)"))
     local bNoMods = trim(sTrimmedSuffixLower):find("no%s*mods")
     local aTargetHealthData
     if isClientFGU() then
@@ -258,7 +250,7 @@ function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTa
         nStaticDC = nStaticDC,
         nModDC = nModDC,
         bNoMods = bNoMods,
-        sFortitudeTraitNameForSave = aDecomposedTraitName.sFortitudeTraitNameForSave
+        sTrimmedFortitudeTraitNameForSave = aDecomposedTraitName.sTrimmedFortitudeTraitNameForSave
     }
 end
 
@@ -266,11 +258,11 @@ function decomposeTraitName(aTrait)
     local sTraitName = DB.getText(aTrait, "name")
     local sTraitNameLower = sTraitName:lower()
     local nFortitudeStart, nFortitudeEnd = sTraitNameLower:find("fortitude")
-    local sFortitudeTraitPrefix, sFortitudeTraitSuffix, sFortitudeTraitNameForSave
+    local sFortitudeTraitPrefix, sFortitudeTraitSuffix, sTrimmedFortitudeTraitNameForSave
     if nFortitudeStart ~= nil and nFortitudeEnd ~= nil then
         sFortitudeTraitPrefix = sTraitName:sub(1, nFortitudeStart - 1)
         sFortitudeTraitSuffix = sTraitName:sub(nFortitudeEnd + 1)
-        sFortitudeTraitNameForSave = trim(sTraitName:sub(1, nFortitudeEnd))
+        sTrimmedFortitudeTraitNameForSave = trim(sTraitName:sub(1, nFortitudeEnd))
     end
 
     return {
@@ -280,7 +272,7 @@ function decomposeTraitName(aTrait)
         nFortitudeEnd = nFortitudeEnd,
         sFortitudeTraitPrefix = sFortitudeTraitPrefix,
         sFortitudeTraitSuffix = sFortitudeTraitSuffix,
-        sFortitudeTraitNameForSave = sFortitudeTraitNameForSave
+        sTrimmedFortitudeTraitNameForSave = sTrimmedFortitudeTraitNameForSave
     }
 end
 
@@ -296,7 +288,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
         rRoll.aDice = { "d20" }
         local nMod, bADV, bDIS, sAddText = ActorManager5E.getSave(rTarget, "constitution")
         rRoll.nMod = nMod
-        rRoll.sDesc = "[SAVE] Constitution for " .. aFortitudeData.sFortitudeTraitNameForSave
+        rRoll.sDesc = "[SAVE] Constitution for " .. aFortitudeData.sTrimmedFortitudeTraitNameForSave
         if sAddText and sAddText ~= "" then
             rRoll.sDesc = rRoll.sDesc .. " " .. sAddText
         end
@@ -309,18 +301,18 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
             rRoll.sDesc = rRoll.sDesc .. " [DIS]"
         end
 
-        rRoll.bSecret = false -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
-        local aLastUndeadFortitudeRoll = {}
-        aLastUndeadFortitudeRoll.nDamage = nTotal
-        aLastUndeadFortitudeRoll.sDamage = sDamage
-        aLastUndeadFortitudeRoll.bSecret = rRoll.bSecret
-        aLastUndeadFortitudeRoll.nTotalHP = aFortitudeData.nTotalHP
-        aLastUndeadFortitudeRoll.nTempHP = aFortitudeData.nTempHP
-        aLastUndeadFortitudeRoll.nWounds = aFortitudeData.nWounds
-        aLastUndeadFortitudeRoll.nModDC = aFortitudeData.nModDC
-        aLastUndeadFortitudeRoll.nStaticDC = aFortitudeData.nStaticDC
-        aLastUndeadFortitudeRoll.sFortitudeTraitNameForSave = aFortitudeData.sFortitudeTraitNameForSave
-        table.insert(aUndeadFortitudeRollQueue, aLastUndeadFortitudeRoll)
+        rRoll.bSecret = tostring(false) -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
+        rRoll.bUndeadFortitude = tostring(true)
+        rRoll.nDamage = nTotal
+        rRoll.sDamage = sDamage
+        rRoll.bSecret = tostring(false)
+        rRoll.nTotalHP = aFortitudeData.nTotalHP
+        rRoll.nTempHP = aFortitudeData.nTempHP
+        rRoll.nWounds = aFortitudeData.nWounds
+        rRoll.nModDC = tostring(aFortitudeData.nModDC) -- override number, can be nil
+        rRoll.nStaticDC = tostring(aFortitudeData.nStaticDC) -- override number, can be nil
+        rRoll.sTrimmedFortitudeTraitNameForSave = aFortitudeData.sTrimmedFortitudeTraitNameForSave
+
         ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
         return true
     end
