@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="iso-8859-1"?>
 <root version="3.3" release="8.1|CoreRPG:4.1">
-	<announcement text="Undead Fortitude v1.1 FGC/FGU 5E, 6/9/23\r2023 Justin Freitas" font="emotefont" icon="undeadfortitude_icon" />
+	<announcement text="Undead Fortitude v2.0 FGC/FGU 5E, 6/18/23\r2023 Justin Freitas" font="emotefont" icon="undeadfortitude_icon" />
 	<properties>
 		<name>Feature: Undead Fortitude</name>
-		<version>1.1</version>
+		<version>2.0</version>
 		<loadorder>1002</loadorder>
 		<author>Justin Freitas</author>
 		<description>Automates the Undead Fortitude constitution saving throw.</description>

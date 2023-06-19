@@ -5,7 +5,7 @@ function onInit()
 		super.onInit();
 	end
 
-    registerMenuItem("Apply Undead Fortitude to Unconscious Actor", "white_undeadfortitude_icon", BUTTON_POSITION_INDEX)
+    registerMenuItem("Apply Fortitude to Unconscious Actor", "white_undeadfortitude_icon", BUTTON_POSITION_INDEX)
 end
 
 function onMenuSelection(selection, subselection)
