@@ -99,18 +99,18 @@ function onSaveNew(rSource, rTarget, rRoll)
 	Comm.deliverChatMessage(rMessage)
 
     local nModDC
-    if rRoll.nModDC == nil or rRoll.nModDC == NIL then
+    if rRoll.sModDC == nil or rRoll.sModDC == NIL then
         nModDC = DEFAULT_UNDEAD_FORTITUDE_DC_MOD
     else
-        nModDC = tonumber(rRoll.nModDC)
+        nModDC = tonumber(rRoll.sModDC)
     end
 
-    local nDamage = rRoll.nDamage
+    local nDamage = tonumber(rRoll.nDamage)
     local nDC
-    if rRoll.nStaticDC == nil or rRoll.nStaticDC == NIL then
+    if rRoll.sStaticDC == nil or rRoll.sStaticDC == NIL then
         nDC = nModDC + nDamage
     else
-        nDC = tonumber(rRoll.nStaticDC)
+        nDC = tonumber(rRoll.sStaticDC)
     end
 
     local msgShort = {font = MSGFONT}
@@ -140,22 +140,85 @@ function onSaveNew(rSource, rTarget, rRoll)
         nDamage = nAllHP - rRoll.nWounds - 1
         local sDamage = string.gsub(rRoll.sDamage, "=%-?%d+", "=" .. nDamage)
         if isClientFGU() then
-            rRoll.nTotal = nDamage
-            rRoll.sDesc = sDamage
-            ActionDamage_applyDamage(rSource, rTarget, rRoll)
+            local rDamageRoll = deserializeTable(rRoll.rDamageRoll)
+            rDamageRoll.nTotal = tonumber(nDamage)
+            rDamageRoll.sDesc = sDamage
+            ActionDamage_applyDamage(rSource, rTarget, rDamageRoll)
         else
             ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, sDamage, nDamage)
         end
     else
         -- Undead Fortitude save was NOT made
-        if rRoll.nWounds < rRoll.nTotalHP then
+        if tonumber(rRoll.nWounds) < tonumber(rRoll.nTotalHP) then
             if isClientFGU() then
-                ActionDamage_applyDamage(rSource, rTarget, rRoll)
+                ActionDamage_applyDamage(rSource, rTarget, deserializeTable(rRoll.rDamageRoll))
             else
                 ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, rRoll.sDamage, nDamage)
             end
         end
     end
+end
+
+function serializeTable(tbl)
+    local result = "{"
+    local first = true
+
+    for key, value in pairs(tbl) do
+        if not first then
+            result = result .. ","
+        end
+
+        if type(key) == "string" then
+            result = result .. '["' .. key .. '"]'
+        else
+            result = result .. "[" .. key .. "]"
+        end
+
+        result = result .. "="
+
+        if type(value) == "table" then
+            result = result .. serializeTable(value)
+        elseif type(value) == "string" then
+            result = result .. '"' .. value .. '"'
+        else
+            result = result .. tostring(value)
+        end
+
+        first = false
+    end
+
+    result = result .. "}"
+    return result
+end
+
+function deserializeTable(str)
+    local function parseValue(value)
+        if value == "true" then
+            return true
+        elseif value == "false" then
+            return false
+        elseif tonumber(value) then
+            return tonumber(value)
+        else
+            return value:sub(2, -2)
+        end
+    end
+
+    local function parsePair(key, value)
+        return key, parseValue(value)
+    end
+
+    local tbl = {}
+    local startIdx = 1
+    endIndex, key, value = select(2, str:find('%[%"(.-)%"]=([^,}]+)', startIdx))
+    while key ~= nil and value ~= nil do
+        parsedKey, parsedValue = parsePair(key, value)
+        tbl[parsedKey] = parsedValue
+        startIdx = endIndex + 1
+        endIndex, key, value = select(2, str:find('%[%"(.-)%"]=([^,}]+)', startIdx))
+    end
+
+    return tbl
 end
 
 function trim(s)
@@ -284,7 +347,7 @@ function getDecomposedTraitName(aTrait)
     }
 end
 
-function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
+function processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, rDamageRoll)
     local nAllHP = aFortitudeData.nTotalHP + aFortitudeData.nTempHP
     if aFortitudeData.nWounds + nTotal >= nAllHP
        and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]"))
@@ -309,16 +372,19 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
             rRoll.sDesc = rRoll.sDesc .. " [DIS]"
         end
 
-        rRoll.bSecret = false -- (ActorManager.getFaction(rTarget) ~= "friend") -- TODO: Is this correct for secret?  Shouldn't we check the roll options?
+        rRoll.bSecret = bSecret
         rRoll.bUndeadFortitude = true
         rRoll.nDamage = nTotal
         rRoll.sDamage = sDamage
         rRoll.nTotalHP = aFortitudeData.nTotalHP
         rRoll.nTempHP = aFortitudeData.nTempHP
         rRoll.nWounds = aFortitudeData.nWounds
-        rRoll.nModDC = tostring(aFortitudeData.nModDC) -- override number, can be nil
-        rRoll.nStaticDC = tostring(aFortitudeData.nStaticDC) -- override number, can be nil
+        rRoll.sModDC = tostring(aFortitudeData.nModDC) -- override number, can be nil
+        rRoll.sStaticDC = tostring(aFortitudeData.nStaticDC) -- override number, can be nil
         rRoll.sTrimmedFortitudeTraitNameForSave = aFortitudeData.sTrimmedFortitudeTraitNameForSave
+        if rDamageRoll ~= nil then
+            rRoll.rDamageRoll = serializeTable(rDamageRoll)
+        end
 
         ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
         return true
@@ -332,7 +398,7 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, nil, nil)
     local bFortitudeTriggered
     if aFortitudeData then
-        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rTarget)
+        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, nil)
     end
 
     if not bFortitudeTriggered then
@@ -347,7 +413,7 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
     local bFortitudeTriggered
     if aFortitudeData then
-        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rTarget)
+        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rTarget, false, rRoll)
     end
 
     if not bFortitudeTriggered then
