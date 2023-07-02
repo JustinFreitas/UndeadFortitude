@@ -64,9 +64,9 @@ function applyUndeadFortitude(nodeCT)
 
     local sWounds
     if sTargetNodeType == "pc" then
-        sWounds = "hp.wounds"
+        sWounds = HP_WOUNDS
     elseif sTargetNodeType == "ct" then
-        sWounds = "wounds"
+        sWounds = WOUNDS
 	else
 		return
 	end
@@ -77,10 +77,11 @@ function applyUndeadFortitude(nodeCT)
         return
     end
 
-    local nWounds = DB.getValue(nodeTarget, sWounds, 0) - 1
+    local aTargetHealthData = getTargetHealthData(sTargetNodeType, nodeTarget, {})
+    local nWounds = aTargetHealthData.nTotalHP - 1
     DB.setValue(nodeTarget, sWounds, "number", nWounds)
-    EffectManager.removeEffect(nodeTarget, UNCONSCIOUS_EFFECT_LABEL)
-    EffectManager.removeEffect(nodeTarget, "Prone")
+    EffectManager.removeEffect(nodeCT, UNCONSCIOUS_EFFECT_LABEL)
+    EffectManager.removeEffect(nodeCT, "Prone")
     displayChatMessage("Fortitude was applied to " .. sDisplayName .. ".")
 end
 
@@ -225,7 +226,7 @@ function trim(s)
     return (s:gsub("^%s*(.-)%s*$", "%1"))
  end
 
-function hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
+function hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
     local aTraits
 	if sTargetNodeType == "pc" then
         aTraits = DB.getChildren(nodeTarget, "traitlist")
@@ -238,7 +239,7 @@ function hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
     for _, aTrait in pairs(aTraits) do
         local aDecomposedTraitName = getDecomposedTraitName(aTrait)
         if aDecomposedTraitName.nFortitudeStart ~= nil then
-            return getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rTarget, rRoll)
+            return getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rRoll)
         end
     end
 end
@@ -264,7 +265,7 @@ function getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
     }
 end
 
-function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
+function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rRoll)
     local nTotalHP = DB.getValue(nodeTarget, HP_TOTAL, 0)
     local nTempHP = DB.getValue(nodeTarget, HP_TEMPORARY, 0)
     local nWounds = DB.getValue(nodeTarget, HP_WOUNDS, 0)
@@ -276,7 +277,7 @@ function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
 		nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
 		nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
 		nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
-	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(rTarget, "vehicle") then
+	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(nodeTarget, "vehicle") then
 		if (rRoll.sSubtargetPath or "") ~= "" then
 			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0)
 			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, WOUNDS), 0)
@@ -295,7 +296,15 @@ function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
     }
 end
 
-function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rTarget, rRoll)
+function getTargetHealthData(sTargetNodeType, nodeTarget, rRoll)
+    if isClientFGU() then
+        return getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rRoll)
+    else
+        return getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
+    end
+end
+
+function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTarget, rRoll)
     local bUndead = false
     if trim(aDecomposedTraitName.sFortitudeTraitPrefix):lower():match("undead") then
         bUndead = true
@@ -305,13 +314,7 @@ function getFortitudeData(aDecomposedTraitName, aTraits, sTargetNodeType, nodeTa
     local nStaticDC = tonumber(sTrimmedSuffixLower:match("dc%s*(-?%d+)"))
     local nModDC = tonumber(sTrimmedSuffixLower:match("mod%s*(-?%d+)"))
     local bNoMods = trim(sTrimmedSuffixLower):find("no%s*mods")
-    local aTargetHealthData
-    if isClientFGU() then
-        aTargetHealthData = getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rTarget, rRoll)
-    else
-        aTargetHealthData = getTargetHealthData_FGC(sTargetNodeType, nodeTarget)
-    end
-
+    local aTargetHealthData = getTargetHealthData(sTargetNodeType, nodeTarget, rRoll)
     return {
         nTotalHP = aTargetHealthData.nTotalHP,
         nTempHP = aTargetHealthData.nTempHP,
@@ -395,7 +398,7 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
 	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	if not nodeTarget then return end
 
-    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, nil, nil)
+    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, nil)
     local bFortitudeTriggered
     if aFortitudeData then
         bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, nil)
@@ -410,7 +413,7 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
 	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
 	if not nodeTarget then return end
 
-    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rTarget, rRoll)
+    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
     local bFortitudeTriggered
     if aFortitudeData then
         bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rTarget, false, rRoll)
