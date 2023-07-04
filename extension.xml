@@ -4,7 +4,7 @@
 	<properties>
 		<name>Feature: Undead Fortitude</name>
 		<version>2.0.2</version>
-		<loadorder>1002</loadorder>
+		<loadorder>9999</loadorder>
 		<author>Justin Freitas</author>
 		<description>Automates the Undead Fortitude constitution saving throw.</description>
 		<ruleset>
