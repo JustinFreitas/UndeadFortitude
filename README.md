@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-Undead Fortitude v2.0.2, by Justin Freitas
+Undead Fortitude v2.0.3, by Justin Freitas
 
 ReadMe and Usage Notes
 
@@ -18,3 +18,4 @@ Changelist:
 - v2.0 - Change the way the mechanism works by removing the queue and using the roll to pass data directly.  Add the ability to customize the behavior based off of the PC/NPC trait name.  For example, Undead Fortitude (MOD 10) will use 10 instead of 5 when processing Undead Fortitude DC calculations.  Something like Death Fortitude (DC 11) will trigger the behavior with a static DC of 11 and no radiant damage restriction because the word Undead isn't before Fortitude.  Another example is Undead Fortitude (Mod 8, no mods) which will trigger the behavior with a DC modifier of 8 instead of 5 and not have the radiant damage or critical hit restrictions.  Use the name of the fortitude trait specified on the creature in the saving throw text and the matching of that saving throw text.  That way, customized fortitude trait names will show instead of hardcoded Undead Fortitude.  The modifier values now support negative values (i.e. MOD -5).  Multiple UF targets were not being accounted for correctly... fixed.
 - v2.0.1 - Thanks to kreppulun for reporting an issue with the damage handling on FGU.  Got that fixed and it now uses the correct damage during Undead Fortitude processing.  Other minor fixes and improvements.
 - v2.0.2 - Some bug fixes around radial menu application of Undead Fortitude and simplifications.
+- v2.0.3 - Icon update, 42px.
