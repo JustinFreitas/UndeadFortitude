@@ -389,6 +389,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, rDa
             rRoll.rDamageRoll = serializeTable(rDamageRoll)
         end
 
+        ModifierStack.reset()  -- Modifiers were being applied to the save from the original dmg roll.  Clear it before save.
         ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
         return true
     end
