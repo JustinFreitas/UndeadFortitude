@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-Undead Fortitude v2.0.3, by Justin Freitas
+Undead Fortitude v2.0.4, by Justin Freitas
 
 ReadMe and Usage Notes
 
@@ -19,3 +19,4 @@ Changelist:
 - v2.0.1 - Thanks to kreppulun for reporting an issue with the damage handling on FGU.  Got that fixed and it now uses the correct damage during Undead Fortitude processing.  Other minor fixes and improvements.
 - v2.0.2 - Some bug fixes around radial menu application of Undead Fortitude and simplifications.
 - v2.0.3 - Icon update, 42px.
+- v2.0.4 - Clear Modifier value prior to issuing Undead Fortitude save.
