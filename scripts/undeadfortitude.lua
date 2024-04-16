@@ -144,17 +144,18 @@ function onSaveNew(rSource, rTarget, rRoll)
             local rDamageRoll = deserializeTable(rRoll.rDamageRoll)
             rDamageRoll.nTotal = tonumber(nDamage)
             rDamageRoll.sDesc = sDamage
-            ActionDamage_applyDamage(rSource, rTarget, rDamageRoll)
+            ActionDamage_applyDamage(rSource, rTarget or rSource, rDamageRoll)
         else
-            ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, sDamage, nDamage)
+            ActionDamage_applyDamage(rSource, rTarget or rSource, rRoll.bSecret, sDamage, nDamage)
         end
     else
         -- Undead Fortitude save was NOT made
         if tonumber(rRoll.nWounds) < tonumber(rRoll.nTotalHP) then
             if isClientFGU() then
-                ActionDamage_applyDamage(rSource, rTarget, deserializeTable(rRoll.rDamageRoll))
+                local rDamageRoll = deserializeTable(rRoll.rDamageRoll)
+                ActionDamage_applyDamage(rSource, rTarget or rSource, rDamageRoll)
             else
-                ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, rRoll.sDamage, nDamage)
+                ActionDamage_applyDamage(rSource, rTarget or rSource, rRoll.bSecret, rRoll.sDamage, nDamage)
             end
         end
     end
