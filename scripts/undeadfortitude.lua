@@ -52,7 +52,7 @@ end
 function displayChatMessage(sFormattedText)
 	if not sFormattedText then return end
 
-	local msg = {font = MSGFONT, icon = "undeadfortitude_icon", secret = false, text = sFormattedText}
+	local msg = {font = MSGFONT, icon = "undeadfortitude_icon", secret = true, text = sFormattedText}
     Comm.addChatMessage(msg) -- local, not broadcast
 end
 

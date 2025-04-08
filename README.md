@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-Undead Fortitude v2.0.5, by Justin Freitas
+Undead Fortitude v2.0.6, by Justin Freitas
 
 ReadMe and Usage Notes
 
@@ -21,3 +21,4 @@ Changelist:
 - v2.0.3 - Icon update, 42px.
 - v2.0.4 - Clear Modifier value prior to issuing Undead Fortitude save.
 - v2.0.5 - Since source and target are the same in this case, use source in the case that the target is nil.  Fixes suppressed rolling in Request Rolls extension.
+- v2.0.6 - Any chat messages that are only displayed to the GM should have the red eye icon ('secret = true').
