@@ -2,6 +2,7 @@
 USER_ISHOST = false
 
 local ActionDamage_applyDamage
+local ActionSave_onSave
 local DEFAULT_UNDEAD_FORTITUDE_DC_MOD = 5
 local HP_TEMPORARY = "hp.temporary"
 local HP_TOTAL = "hp.total"
@@ -19,7 +20,8 @@ function onInit()
 	if USER_ISHOST then
 		Comm.registerSlashHandler("uf", processChatCommand)
 		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
-        ActionsManager.registerResultHandler("save", onSaveNew)
+        ActionSave_onSave = ActionSave.onSave
+        ActionSave.onSave = onSaveNew
         ActionDamage_applyDamage = ActionDamage.applyDamage
         if isClientFGU() then
             ActionDamage.applyDamage = applyDamage_FGU
@@ -91,7 +93,9 @@ end
 
 function onSaveNew(rSource, rTarget, rRoll)
     if rRoll.bUndeadFortitude == nil then
-        ActionSave.onSave(rSource, rTarget, rRoll)
+        if ActionSave_onSave then
+            ActionSave_onSave(rSource, rTarget, rRoll)
+        end
         return
     end
 
