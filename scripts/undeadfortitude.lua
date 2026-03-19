@@ -22,11 +22,16 @@ function onInit()
 		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
         ActionSave_onSave = ActionSave.onSave
         ActionSave.onSave = onSaveNew
-        ActionDamage_applyDamage = ActionDamage.applyDamage
-        if isClientFGU() then
-            ActionDamage.applyDamage = applyDamage_FGU
-        else
-            ActionDamage.applyDamage = applyDamage_FGC
+        if ActionHealthD20 and ActionHealthD20.apply then
+            ActionDamage_applyDamage = ActionHealthD20.apply
+            ActionHealthD20.apply = applyDamage_v2
+        elseif ActionDamage and ActionDamage.applyDamage then
+            ActionDamage_applyDamage = ActionDamage.applyDamage
+            if isClientFGU() then
+                ActionDamage.applyDamage = applyDamage_FGU
+            else
+                ActionDamage.applyDamage = applyDamage_FGC
+            end
         end
     end
 end
@@ -90,7 +95,6 @@ end
 function isClientFGU()
     return Session.VersionMajor >= 4
 end
-
 function onSaveNew(rSource, rTarget, rRoll)
     if rRoll.bUndeadFortitude == nil then
         if ActionSave_onSave then
@@ -99,7 +103,11 @@ function onSaveNew(rSource, rTarget, rRoll)
         return
     end
 
-    ActionsManager2.decodeAdvantage(rRoll)
+    if ActionD20 and ActionD20.decodeAdvantage then
+        ActionD20.decodeAdvantage(rRoll)
+    elseif ActionsManager2 and ActionsManager2.decodeAdvantage then
+        ActionsManager2.decodeAdvantage(rRoll)
+    end
 	local rMessage = ActionsManager.createActionMessage(rSource, rRoll)
 	Comm.deliverChatMessage(rMessage)
 
@@ -136,96 +144,57 @@ function onSaveNew(rSource, rTarget, rRoll)
 		msgLong.text = msgLong.text .. " [FAILURE]"
 	end
 
-    ActionsManager.outputResult(rRoll.bSecret, rSource, nil, msgLong, msgShort)
+    local bSecret = (rRoll.bSecret == "1" or rRoll.bSecret == true)
+    ActionsManager.outputResult(bSecret, rSource, nil, msgLong, msgShort)
 
     -- Undead Fortitude processing
-    local nAllHP = rRoll.nTotalHP + rRoll.nTempHP
+    local nAllHP = tonumber(rRoll.nTotalHP or 0) + tonumber(rRoll.nTempHP or 0)
+    local rOriginalAttacker = nil
+    if rRoll.sOriginalAttacker then
+        rOriginalAttacker = ActorManager.resolveActor(rRoll.sOriginalAttacker)
+    end
+    local rActualSource = rOriginalAttacker or rSource
+
     if nConSave >= nDC then
         -- Undead Fortitude save was made!
-        nDamage = nAllHP - rRoll.nWounds - 1
+        nDamage = nAllHP - tonumber(rRoll.nWounds or 0) - 1
         local sDamage = string.gsub(rRoll.sDamage, "=%-?%d+", "=" .. nDamage)
-        if isClientFGU() then
-            local rDamageRoll = deserializeTable(rRoll.rDamageRoll)
-            rDamageRoll.nTotal = tonumber(nDamage)
-            rDamageRoll.sDesc = sDamage
-            ActionDamage_applyDamage(rSource, rTarget or rSource, rDamageRoll)
+        local rDamageRoll = {
+            sType = "damage",
+            sDesc = sDamage,
+            nTotal = tonumber(nDamage),
+            aDice = {},
+            bSecret = bSecret
+        }
+        if ActionHealthD20 and ActionHealthD20.apply then
+            ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+        elseif isClientFGU() then
+            ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
         else
-            ActionDamage_applyDamage(rSource, rTarget or rSource, rRoll.bSecret, sDamage, nDamage)
+            ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, sDamage, nDamage)
         end
     else
         -- Undead Fortitude save was NOT made
         if tonumber(rRoll.nWounds) < tonumber(rRoll.nTotalHP) then
-            if isClientFGU() then
-                local rDamageRoll = deserializeTable(rRoll.rDamageRoll)
-                ActionDamage_applyDamage(rSource, rTarget or rSource, rDamageRoll)
+            local rDamageRoll = {
+                sType = "damage",
+                sDesc = rRoll.sDamage,
+                nTotal = tonumber(rRoll.nDamage),
+                aDice = {},
+                bSecret = bSecret
+            }
+            if ActionHealthD20 and ActionHealthD20.apply then
+                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+            elseif isClientFGU() then
+                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
             else
-                ActionDamage_applyDamage(rSource, rTarget or rSource, rRoll.bSecret, rRoll.sDamage, nDamage)
+                ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, rRoll.sDamage, nDamage)
             end
         end
     end
 end
 
-function serializeTable(tbl)
-    local result = "{"
-    local first = true
 
-    for key, value in pairs(tbl) do
-        if not first then
-            result = result .. ","
-        end
-
-        if type(key) == "string" then
-            result = result .. '["' .. key .. '"]'
-        else
-            result = result .. "[" .. key .. "]"
-        end
-
-        result = result .. "="
-
-        if type(value) == "table" then
-            result = result .. serializeTable(value)
-        elseif type(value) == "string" then
-            result = result .. '"' .. value .. '"'
-        else
-            result = result .. tostring(value)
-        end
-
-        first = false
-    end
-
-    result = result .. "}"
-    return result
-end
-
-function deserializeTable(str)
-    local function parseValue(value)
-        if value == "true" then
-            return true
-        elseif value == "false" then
-            return false
-        elseif tonumber(value) then
-            return tonumber(value)
-        else
-            return value:sub(2, -2)
-        end
-    end
-
-    local function parsePair(key, value)
-        return key, parseValue(value)
-    end
-
-    local tbl = {}
-    local startIdx = 1
-    endIndex, key, value = select(2, str:find('%[%"(.-)%"]=([^,}]+)', startIdx))
-    while key ~= nil and value ~= nil do
-        parsedKey, parsedValue = parsePair(key, value)
-        tbl[parsedKey] = parsedValue
-        startIdx = endIndex + 1
-        endIndex, key, value = select(2, str:find('%[%"(.-)%"]=([^,}]+)', startIdx))
-    end
-
-    return tbl
-end
 
 function trim(s)
     return (s:gsub("^%s*(.-)%s*$", "%1"))
@@ -355,7 +324,7 @@ function getDecomposedTraitName(aTrait)
     }
 end
 
-function processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, rDamageRoll)
+function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSecret)
     local nAllHP = aFortitudeData.nTotalHP + aFortitudeData.nTempHP
     if aFortitudeData.nWounds + nTotal >= nAllHP
        and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]"))
@@ -368,6 +337,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, rDa
         local nMod, bADV, bDIS, sAddText = ActorManager5E.getSave(rTarget, "constitution")
         rRoll.nMod = nMod
         rRoll.sDesc = "[SAVE] Constitution for " .. aFortitudeData.sTrimmedFortitudeTraitNameForSave
+        rRoll.sSaveDesc = ""
         if sAddText and sAddText ~= "" then
             rRoll.sDesc = rRoll.sDesc .. " " .. sAddText
         end
@@ -387,11 +357,11 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, rDa
         rRoll.nTotalHP = aFortitudeData.nTotalHP
         rRoll.nTempHP = aFortitudeData.nTempHP
         rRoll.nWounds = aFortitudeData.nWounds
-        rRoll.sModDC = tostring(aFortitudeData.nModDC) -- override number, can be nil
-        rRoll.sStaticDC = tostring(aFortitudeData.nStaticDC) -- override number, can be nil
+        rRoll.sModDC = tostring(aFortitudeData.nModDC)
+        rRoll.sStaticDC = tostring(aFortitudeData.nStaticDC)
         rRoll.sTrimmedFortitudeTraitNameForSave = aFortitudeData.sTrimmedFortitudeTraitNameForSave
-        if rDamageRoll ~= nil then
-            rRoll.rDamageRoll = serializeTable(rDamageRoll)
+        if rSource ~= nil then
+            rRoll.sOriginalAttacker = ActorManager.getCreatureNodeName(rSource)
         end
 
         ModifierStack.reset()  -- Modifiers were being applied to the save from the original dmg roll.  Clear it before save.
@@ -407,7 +377,7 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, nil)
     local bFortitudeTriggered
     if aFortitudeData then
-        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rTarget, bSecret, nil)
+        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSecret)
     end
 
     if not bFortitudeTriggered then
@@ -420,9 +390,34 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
 	if not nodeTarget then return end
 
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
-    local bFortitudeTriggered
+     local bFortitudeTriggered
     if aFortitudeData then
-        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rTarget, false, rRoll)
+        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rSource, rTarget, false)
+    end
+
+    if not bFortitudeTriggered then
+        ActionDamage_applyDamage(rSource, rTarget, rRoll)
+    end
+end
+
+function applyDamage_v2(rSource, rTarget, rRoll)
+	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	if not nodeTarget then return end
+
+    -- We only intercept if it's actually damage (ActionHealthD20.apply handles heals too!)
+    local isDamageRoll = true
+    if rRoll and rRoll.sDesc then
+        if rRoll.sDesc:match("%[HEAL") or rRoll.sDesc:match("%[RECOVERY") or rRoll.sDesc:match("%[FHEAL") or rRoll.sDesc:match("%[REGEN") then
+            isDamageRoll = false
+        elseif (rRoll.nTotal or 0) < 0 then
+            isDamageRoll = false
+        end
+    end
+
+    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
+    local bFortitudeTriggered
+    if aFortitudeData and isDamageRoll then
+        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rSource, rTarget, rRoll.bSecret)
     end
 
     if not bFortitudeTriggered then
