@@ -22,6 +22,7 @@ function onInit()
 		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
         ActionSave_onSave = ActionSave.onSave
         ActionSave.onSave = onSaveNew
+        ActionsManager.registerResultHandler("save", ActionSave.onSave)
         if ActionHealthD20 and ActionHealthD20.apply then
             ActionDamage_applyDamage = ActionHealthD20.apply
             ActionHealthD20.apply = applyDamage_v2
@@ -351,7 +352,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSe
         end
 
         rRoll.bSecret = bSecret
-        rRoll.bUndeadFortitude = true
+        rRoll.bUndeadFortitude = "true"
         rRoll.nDamage = nTotal
         rRoll.sDamage = sDamage
         rRoll.nTotalHP = aFortitudeData.nTotalHP
