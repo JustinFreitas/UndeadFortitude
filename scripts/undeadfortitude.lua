@@ -14,6 +14,35 @@ local NIL = "nil"
 local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
 local WOUNDS = "wounds"
 
+-- Helper to safely check for effects, preferring the 5E-specific EffectManager5E if available.
+local function hasEffectSafe(rActor, sEffect)
+    if EffectManager5E and EffectManager5E.hasEffect then
+        return EffectManager5E.hasEffect(rActor, sEffect)
+    end
+    return EffectManager.hasEffect(rActor, sEffect)
+end
+
+-- Helper to safely get an actor from a node/string, preferring the modern getActor method.
+local function getActorSafe(v)
+    if ActorManager.getActor then
+        return ActorManager.getActor(v)
+    end
+    return ActorManager.resolveActor(v)
+end
+
+-- Helper to safely get the target node type and node, preferring modern methods.
+local function getTypeAndNodeSafe(v)
+    if ActorManager.isPC and ActorManager.getCreatureNode and ActorManager.getCTNode then
+        local bIsPC = ActorManager.isPC(v)
+        if bIsPC then
+            return "pc", ActorManager.getCreatureNode(v)
+        else
+            return "ct", ActorManager.getCTNode(v) or ActorManager.getCreatureNode(v)
+        end
+    end
+    return ActorManager.getTypeAndNode(v)
+end
+
 function onInit()
     USER_ISHOST = User.isHost()
 
@@ -152,7 +181,7 @@ function onSaveNew(rSource, rTarget, rRoll)
     local nAllHP = tonumber(rRoll.nTotalHP or 0) + tonumber(rRoll.nTempHP or 0)
     local rOriginalAttacker = nil
     if rRoll.sOriginalAttacker then
-        rOriginalAttacker = ActorManager.resolveActor(rRoll.sOriginalAttacker)
+        rOriginalAttacker = getActorSafe(rRoll.sOriginalAttacker)
     end
     local rActualSource = rOriginalAttacker or rSource
 
@@ -330,7 +359,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSe
     if aFortitudeData.nWounds + nTotal >= nAllHP
        and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]"))
        and (aFortitudeData.bNoMods or not string.find(sDamage, "%[CRITICAL%]"))
-       and not EffectManager5E.hasEffect(rTarget, UNCONSCIOUS_EFFECT_LABEL)
+       and not hasEffectSafe(rTarget, UNCONSCIOUS_EFFECT_LABEL)
        and aFortitudeData.nTotalHP > aFortitudeData.nWounds then
         local rRoll = { }
         rRoll.sType = "save"
@@ -372,7 +401,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSe
 end
 
 function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(rTarget)
 	if not nodeTarget then return end
 
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, nil)
@@ -387,7 +416,7 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
 end
 
 function applyDamage_FGU(rSource, rTarget, rRoll)
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(rTarget)
 	if not nodeTarget then return end
 
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
@@ -402,7 +431,7 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
 end
 
 function applyDamage_v2(rSource, rTarget, rRoll)
-	local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(rTarget)
+	local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(rTarget)
 	if not nodeTarget then return end
 
     -- We only intercept if it's actually damage (ActionHealthD20.apply handles heals too!)
