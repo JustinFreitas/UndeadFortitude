@@ -14,14 +14,6 @@ local NIL = "nil"
 local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
 local WOUNDS = "wounds"
 
--- Helper to safely check for effects, preferring the 5E-specific EffectManager5E if available.
-local function hasEffectSafe(rActor, sEffect)
-    if EffectManager5E and EffectManager5E.hasEffect then
-        return EffectManager5E.hasEffect(rActor, sEffect)
-    end
-    return EffectManager.hasEffect(rActor, sEffect)
-end
-
 -- Helper to safely get an actor from a node/string, preferring the modern getActor method.
 local function getActorSafe(v)
     if ActorManager.getActor then
@@ -30,17 +22,20 @@ local function getActorSafe(v)
     return ActorManager.resolveActor(v)
 end
 
--- Helper to safely get the target node type and node, preferring modern methods.
+-- Helper to safely get an actor's type and node, preferring the modern getTypeAndNode method.
 local function getTypeAndNodeSafe(v)
-    if ActorManager.isPC and ActorManager.getCreatureNode and ActorManager.getCTNode then
-        local bIsPC = ActorManager.isPC(v)
-        if bIsPC then
-            return "pc", ActorManager.getCreatureNode(v)
-        else
-            return "ct", ActorManager.getCTNode(v) or ActorManager.getCreatureNode(v)
-        end
+    if ActorManager.getTypeAndNode then
+        return ActorManager.getTypeAndNode(v)
     end
-    return ActorManager.getTypeAndNode(v)
+    return ActorManager.getActorTypeAndNode(v)
+end
+
+-- Helper to safely check for effects, preferring the 5E-specific EffectManager5E if available.
+local function hasEffectSafe(rActor, sEffect)
+    if EffectManager5E and EffectManager5E.hasEffect then
+        return EffectManager5E.hasEffect(rActor, sEffect)
+    end
+    return EffectManager.hasEffect(rActor, sEffect)
 end
 
 function onInit()
@@ -94,7 +89,7 @@ function displayChatMessage(sFormattedText)
 end
 
 function applyUndeadFortitude(nodeCT)
-    local sTargetNodeType, nodeTarget = ActorManager.getTypeAndNode(nodeCT)
+    local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(nodeCT)
 	if not nodeTarget then
 		return
 	end
@@ -109,7 +104,7 @@ function applyUndeadFortitude(nodeCT)
 	end
 
     local sDisplayName = ActorManager.getDisplayName(nodeTarget)
-    if not EffectManager5E.hasEffect(nodeTarget, UNCONSCIOUS_EFFECT_LABEL) then
+    if not hasEffectSafe(nodeTarget, UNCONSCIOUS_EFFECT_LABEL) then
         displayChatMessage(sDisplayName .. " is not an unconscious actor, skipping Fortitude application.")
         return
     end
@@ -197,11 +192,17 @@ function onSaveNew(rSource, rTarget, rRoll)
             bSecret = bSecret
         }
         if ActionHealthD20 and ActionHealthD20.apply then
-            ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+            if ActionDamage_applyDamage then
+                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+            end
         elseif isClientFGU() then
-            ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+            if ActionDamage_applyDamage then
+                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+            end
         else
-            ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, sDamage, nDamage)
+            if ActionDamage_applyDamage then
+                ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, sDamage, nDamage)
+            end
         end
     else
         -- Undead Fortitude save was NOT made
@@ -214,11 +215,17 @@ function onSaveNew(rSource, rTarget, rRoll)
                 bSecret = bSecret
             }
             if ActionHealthD20 and ActionHealthD20.apply then
-                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+                if ActionDamage_applyDamage then
+                    ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+                end
             elseif isClientFGU() then
-                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+                if ActionDamage_applyDamage then
+                    ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
+                end
             else
-                ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, rRoll.sDamage, nDamage)
+                if ActionDamage_applyDamage then
+                    ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, rRoll.sDamage, nDamage)
+                end
             end
         end
     end
@@ -411,7 +418,9 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
     end
 
     if not bFortitudeTriggered then
-        ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
+        if ActionDamage_applyDamage then
+            ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
+        end
     end
 end
 
@@ -426,7 +435,9 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
     end
 
     if not bFortitudeTriggered then
-        ActionDamage_applyDamage(rSource, rTarget, rRoll)
+        if ActionDamage_applyDamage then
+            ActionDamage_applyDamage(rSource, rTarget, rRoll)
+        end
     end
 end
 
@@ -451,6 +462,8 @@ function applyDamage_v2(rSource, rTarget, rRoll)
     end
 
     if not bFortitudeTriggered then
-        ActionDamage_applyDamage(rSource, rTarget, rRoll)
+        if ActionDamage_applyDamage then
+            ActionDamage_applyDamage(rSource, rTarget, rRoll)
+        end
     end
 end
