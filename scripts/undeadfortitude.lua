@@ -14,6 +14,17 @@ local NIL = "nil"
 local UNCONSCIOUS_EFFECT_LABEL = "Unconscious"
 local WOUNDS = "wounds"
 
+-- Helper to safely check if a string is blank, preferring the modern StringManager method.
+local function isBlankSafe(s)
+    if StringManager.isBlank then
+        return StringManager.isBlank(s)
+    end
+    if type(s) ~= "string" then
+        return false
+    end
+    return (string.gsub(s, "%s+", "") == "")
+end
+
 -- Helper to safely get an actor from a node/string, preferring the modern getActor method.
 local function getActorSafe(v)
     if ActorManager.getActor then
@@ -30,12 +41,23 @@ local function getTypeAndNodeSafe(v)
     return ActorManager.getActorTypeAndNode(v)
 end
 
--- Helper to safely check for effects, preferring the 5E-specific EffectManager5E if available.
-local function hasEffectSafe(rActor, sEffect)
+-- Helper to safely check for effects, preferring the modern CoreRPG or 5E-specific EffectManager if available.
+local function hasEffectSafe(rActor, sEffect, rTarget, bTargetedOnly)
+    if EffectManager.hasEffect then
+        return EffectManager.hasEffect(rActor, sEffect, rTarget, bTargetedOnly)
+    end
     if EffectManager5E and EffectManager5E.hasEffect then
-        return EffectManager5E.hasEffect(rActor, sEffect)
+        return EffectManager5E.hasEffect(rActor, sEffect, rTarget, bTargetedOnly)
     end
     return EffectManager.hasEffect(rActor, sEffect)
+end
+
+-- Helper to safely fetch saves from the 5E ruleset.
+local function getSaveSafe(nodeActor, sSave)
+    if ActorManager5E and ActorManager5E.getSave then
+        return ActorManager5E.getSave(nodeActor, sSave)
+    end
+    return 0, false, false, ""
 end
 
 function onInit()
@@ -82,7 +104,7 @@ function processChatCommand(_, sParams)
 end
 
 function displayChatMessage(sFormattedText)
-	if not sFormattedText then return end
+	if isBlankSafe(sFormattedText) then return end
 
 	local msg = {font = MSGFONT, icon = "undeadfortitude_icon", secret = true, text = sFormattedText}
     Comm.addChatMessage(msg) -- local, not broadcast
@@ -371,7 +393,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSe
         local rRoll = { }
         rRoll.sType = "save"
         rRoll.aDice = { "d20" }
-        local nMod, bADV, bDIS, sAddText = ActorManager5E.getSave(rTarget, "constitution")
+        local nMod, bADV, bDIS, sAddText = getSaveSafe(rTarget, "constitution")
         rRoll.nMod = nMod
         rRoll.sDesc = "[SAVE] Constitution for " .. aFortitudeData.sTrimmedFortitudeTraitNameForSave
         rRoll.sSaveDesc = ""
