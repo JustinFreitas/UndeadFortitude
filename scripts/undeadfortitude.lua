@@ -1,5 +1,5 @@
 -- This extension contains 5e SRD mounted combat rules.  For license details see file: Open Gaming License v1.0a.txt
-USER_ISHOST = false
+local USER_ISHOST = false
 
 local ActionDamage_applyDamage
 local ActionSave_onSave
@@ -60,24 +60,78 @@ local function getSaveSafe(nodeActor, sSave)
     return 0, false, false, ""
 end
 
+-- Helper to safely call the ruleset's damage application function.
+local function applyDamageFinal(rSource, rTarget, rRoll, bSecret, sDamage, nTotal)
+    if type(ActionDamage_applyDamage) == "function" then
+        if isClientFGU() then
+            ActionDamage_applyDamage(rSource, rTarget, rRoll)
+        else
+            ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
+        end
+    elseif ActionHealthD20 and type(ActionHealthD20.apply) == "function" then
+         ActionHealthD20.apply(rSource, rTarget, rRoll)
+    elseif ActionDamage then
+        if type(ActionDamage.applyDamage) == "function" then
+            if isClientFGU() then
+                ActionDamage.applyDamage(rSource, rTarget, rRoll)
+            else
+                ActionDamage.applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
+            end
+        elseif type(ActionDamage.apply) == "function" then
+            if isClientFGU() then
+                ActionDamage.apply(rSource, rTarget, rRoll)
+            else
+                ActionDamage.apply(rSource, rTarget, bSecret, sDamage, nTotal)
+            end
+        end
+    end
+end
+
 function onInit()
     USER_ISHOST = User.isHost()
+
+    -- Initialize upvalues on all instances (Host and Client)
+    -- This ensures that result handlers triggered on clients can still call the original functions.
+    if ActionSave then
+        ActionSave_onSave = ActionSave.onSave
+    end
+    
+    if ActionHealthD20 and ActionHealthD20.apply then
+        ActionDamage_applyDamage = ActionHealthD20.apply
+    elseif ActionDamage then
+        if ActionDamage.applyDamage then
+            ActionDamage_applyDamage = ActionDamage.applyDamage
+        elseif ActionDamage.apply then
+            ActionDamage_applyDamage = ActionDamage.apply
+        end
+    end
+
+    -- Register result handlers on all instances
+    if ActionSave then
+        ActionSave.onSave = onSaveNew
+        ActionsManager.registerResultHandler("save", ActionSave.onSave)
+    end
 
 	if USER_ISHOST then
 		Comm.registerSlashHandler("uf", processChatCommand)
 		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
-        ActionSave_onSave = ActionSave.onSave
-        ActionSave.onSave = onSaveNew
-        ActionsManager.registerResultHandler("save", ActionSave.onSave)
+        
+        -- Hook damage functions to intercept damage rolls
         if ActionHealthD20 and ActionHealthD20.apply then
-            ActionDamage_applyDamage = ActionHealthD20.apply
             ActionHealthD20.apply = applyDamage_v2
-        elseif ActionDamage and ActionDamage.applyDamage then
-            ActionDamage_applyDamage = ActionDamage.applyDamage
-            if isClientFGU() then
-                ActionDamage.applyDamage = applyDamage_FGU
-            else
-                ActionDamage.applyDamage = applyDamage_FGC
+        elseif ActionDamage then
+            if ActionDamage.applyDamage then
+                if isClientFGU() then
+                    ActionDamage.applyDamage = applyDamage_FGU
+                else
+                    ActionDamage.applyDamage = applyDamage_FGC
+                end
+            elseif ActionDamage.apply then
+                if isClientFGU() then
+                    ActionDamage.apply = applyDamage_FGU
+                else
+                    ActionDamage.apply = applyDamage_FGC
+                end
             end
         end
     end
@@ -144,7 +198,7 @@ function isClientFGU()
 end
 function onSaveNew(rSource, rTarget, rRoll)
     if rRoll.bUndeadFortitude == nil then
-        if ActionSave_onSave then
+        if type(ActionSave_onSave) == "function" then
             ActionSave_onSave(rSource, rTarget, rRoll)
         end
         return
@@ -213,19 +267,7 @@ function onSaveNew(rSource, rTarget, rRoll)
             aDice = {},
             bSecret = bSecret
         }
-        if ActionHealthD20 and ActionHealthD20.apply then
-            if ActionDamage_applyDamage then
-                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
-            end
-        elseif isClientFGU() then
-            if ActionDamage_applyDamage then
-                ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
-            end
-        else
-            if ActionDamage_applyDamage then
-                ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, sDamage, nDamage)
-            end
-        end
+        applyDamageFinal(rActualSource, rTarget or rSource, rDamageRoll, bSecret, sDamage, nDamage)
     else
         -- Undead Fortitude save was NOT made
         if tonumber(rRoll.nWounds) < tonumber(rRoll.nTotalHP) then
@@ -236,19 +278,7 @@ function onSaveNew(rSource, rTarget, rRoll)
                 aDice = {},
                 bSecret = bSecret
             }
-            if ActionHealthD20 and ActionHealthD20.apply then
-                if ActionDamage_applyDamage then
-                    ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
-                end
-            elseif isClientFGU() then
-                if ActionDamage_applyDamage then
-                    ActionDamage_applyDamage(rActualSource, rTarget or rSource, rDamageRoll)
-                end
-            else
-                if ActionDamage_applyDamage then
-                    ActionDamage_applyDamage(rActualSource, rTarget or rSource, bSecret, rRoll.sDamage, nDamage)
-                end
-            end
+            applyDamageFinal(rActualSource, rTarget or rSource, rDamageRoll, bSecret, rRoll.sDamage, tonumber(rRoll.nDamage))
         end
     end
 end
@@ -440,9 +470,7 @@ function applyDamage_FGC(rSource, rTarget, bSecret, sDamage, nTotal)
     end
 
     if not bFortitudeTriggered then
-        if ActionDamage_applyDamage then
-            ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
-        end
+        applyDamageFinal(rSource, rTarget, nil, bSecret, sDamage, nTotal)
     end
 end
 
@@ -457,9 +485,7 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
     end
 
     if not bFortitudeTriggered then
-        if ActionDamage_applyDamage then
-            ActionDamage_applyDamage(rSource, rTarget, rRoll)
-        end
+        applyDamageFinal(rSource, rTarget, rRoll)
     end
 end
 
@@ -484,8 +510,6 @@ function applyDamage_v2(rSource, rTarget, rRoll)
     end
 
     if not bFortitudeTriggered then
-        if ActionDamage_applyDamage then
-            ActionDamage_applyDamage(rSource, rTarget, rRoll)
-        end
+        applyDamageFinal(rSource, rTarget, rRoll)
     end
 end
