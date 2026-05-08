@@ -2,7 +2,7 @@
 local USER_ISHOST = false
 
 local ActionDamage_applyDamage
-local ActionSave_onSave
+local ActionSave_onSave_Ruleset
 local DEFAULT_UNDEAD_FORTITUDE_DC_MOD = 5
 local HP_TEMPORARY = "hp.temporary"
 local HP_TOTAL = "hp.total"
@@ -91,11 +91,6 @@ function onInit()
     USER_ISHOST = User.isHost()
 
     -- Initialize upvalues on all instances (Host and Client)
-    -- This ensures that result handlers triggered on clients can still call the original functions.
-    if ActionSave then
-        ActionSave_onSave = ActionSave.onSave
-    end
-    
     if ActionHealthD20 and ActionHealthD20.apply then
         ActionDamage_applyDamage = ActionHealthD20.apply
     elseif ActionDamage then
@@ -106,11 +101,12 @@ function onInit()
         end
     end
 
+    -- Capture ruleset result handlers from ActionsManager (Host and Client)
+    -- This ensures we get the actual local functions even if they aren't in the global table.
+    ActionSave_onSave_Ruleset = ActionsManager.getResultHandler("save")
+
     -- Register result handlers on all instances
-    if ActionSave then
-        ActionSave.onSave = onSaveNew
-        ActionsManager.registerResultHandler("save", ActionSave.onSave)
-    end
+    ActionsManager.registerResultHandler("save", onSaveNew)
 
 	if USER_ISHOST then
 		Comm.registerSlashHandler("uf", processChatCommand)
@@ -196,21 +192,23 @@ end
 function isClientFGU()
     return Session.VersionMajor >= 4
 end
+
 function onSaveNew(rSource, rTarget, rRoll)
+    -- Passthrough to ruleset handler
+    if type(ActionSave_onSave_Ruleset) == "function" then
+        ActionSave_onSave_Ruleset(rSource, rTarget, rRoll)
+    end
+
     if rRoll.bUndeadFortitude == nil then
-        if type(ActionSave_onSave) == "function" then
-            ActionSave_onSave(rSource, rTarget, rRoll)
-        end
         return
     end
 
+    -- Explicitly decode advantage/disadvantage using 5E-specific managers to ensure we don't just sum all dice.
     if ActionD20 and ActionD20.decodeAdvantage then
         ActionD20.decodeAdvantage(rRoll)
     elseif ActionsManager2 and ActionsManager2.decodeAdvantage then
         ActionsManager2.decodeAdvantage(rRoll)
     end
-	local rMessage = ActionsManager.createActionMessage(rSource, rRoll)
-	Comm.deliverChatMessage(rMessage)
 
     local nModDC
     if rRoll.sModDC == nil or rRoll.sModDC == NIL then
@@ -506,7 +504,7 @@ function applyDamage_v2(rSource, rTarget, rRoll)
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
     local bFortitudeTriggered
     if aFortitudeData and isDamageRoll then
-        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rSource, rTarget, rRoll.bSecret)
+        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSecret)
     end
 
     if not bFortitudeTriggered then

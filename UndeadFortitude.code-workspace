@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../rulesets/5E"
+		},
+		{
+			"path": "../../rulesets/CoreRPG"
+		},
+		{
+			"path": "../../../../../../Fantasy Grounds/extensions/StrengthOfTheGrave"
+		},
+		{
+			"path": "../../../../../../Fantasy Grounds/extensions/RelentlessEndurance"
+		}
+	],
+	"settings": {}
+}
