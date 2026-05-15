@@ -33,8 +33,16 @@ local function getActorSafe(v)
     return ActorManager.resolveActor(v)
 end
 
--- Helper to safely get an actor's type and node, preferring the modern getTypeAndNode method.
+-- Helper to safely get an actor's type and node, preferring modern non-deprecated methods.
 local function getTypeAndNodeSafe(v)
+    if ActorManager.isPC and ActorManager.getCreatureNode and ActorManager.getCTNode then
+        local bIsPC = ActorManager.isPC(v)
+        if bIsPC then
+            return "pc", ActorManager.getCreatureNode(v)
+        else
+            return "ct", ActorManager.getCTNode(v) or ActorManager.getCreatureNode(v)
+        end
+    end
     if ActorManager.getTypeAndNode then
         return ActorManager.getTypeAndNode(v)
     end
@@ -256,19 +264,20 @@ function onSaveNew(rSource, rTarget, rRoll)
 
     if nConSave >= nDC then
         -- Undead Fortitude save was made!
-        nDamage = nAllHP - tonumber(rRoll.nWounds or 0) - 1
-        local sDamage = string.gsub(rRoll.sDamage, "=%-?%d+", "=" .. nDamage)
+        -- Calculate specific damage amount needed to leave exactly 1 HP.
+        local nDamageToApply = nAllHP - tonumber(rRoll.nWounds or 0) - 1
+        local sDamage = string.gsub(rRoll.sDamage, "=%-?%d+", "=" .. nDamageToApply)
         local rDamageRoll = {
             sType = "damage",
             sDesc = sDamage,
-            nTotal = tonumber(nDamage),
+            nTotal = tonumber(nDamageToApply),
             aDice = {},
             bSecret = bSecret
         }
-        applyDamageFinal(rActualSource, rTarget or rSource, rDamageRoll, bSecret, sDamage, nDamage)
+        applyDamageFinal(rActualSource, rTarget or rSource, rDamageRoll, bSecret, sDamage, nDamageToApply)
     else
         -- Undead Fortitude save was NOT made
-        if tonumber(rRoll.nWounds) < tonumber(rRoll.nTotalHP) then
+        if tonumber(rRoll.nWounds or 0) < tonumber(rRoll.nTotalHP or 0) then
             local rDamageRoll = {
                 sType = "damage",
                 sDesc = rRoll.sDamage,
@@ -412,10 +421,11 @@ function getDecomposedTraitName(aTrait)
 end
 
 function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSecret)
+    local nDamageTotal = tonumber(nTotal or 0)
     local nAllHP = aFortitudeData.nTotalHP + aFortitudeData.nTempHP
-    if aFortitudeData.nWounds + nTotal >= nAllHP
-       and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage, "%[TYPE:.*radiant.*%]"))
-       and (aFortitudeData.bNoMods or not string.find(sDamage, "%[CRITICAL%]"))
+    if aFortitudeData.nWounds + nDamageTotal >= nAllHP
+       and (aFortitudeData.bNoMods or not aFortitudeData.bUndead or not string.find(sDamage or "", "%[TYPE:.*radiant.*%]"))
+       and (aFortitudeData.bNoMods or not string.find(sDamage or "", "%[CRITICAL%]"))
        and not hasEffectSafe(rTarget, UNCONSCIOUS_EFFECT_LABEL)
        and aFortitudeData.nTotalHP > aFortitudeData.nWounds then
         local rRoll = { }
@@ -439,7 +449,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSe
 
         rRoll.bSecret = bSecret
         rRoll.bUndeadFortitude = "true"
-        rRoll.nDamage = nTotal
+        rRoll.nDamage = nDamageTotal
         rRoll.sDamage = sDamage
         rRoll.nTotalHP = aFortitudeData.nTotalHP
         rRoll.nTempHP = aFortitudeData.nTempHP
@@ -504,7 +514,7 @@ function applyDamage_v2(rSource, rTarget, rRoll)
     local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
     local bFortitudeTriggered
     if aFortitudeData and isDamageRoll then
-        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSecret)
+        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rSource, rTarget, rRoll.bSecret)
     end
 
     if not bFortitudeTriggered then
