@@ -3,3 +3,5 @@ scripts/.luacheckrc
 build/out/UndeadFortitude.ext
 build/out/UndeadFortitude.zip
 .vscode/settings.json
+node_modules/
+package-lock.json
