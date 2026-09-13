@@ -1,4 +1,6 @@
 -- This extension contains 5e SRD mounted combat rules.  For license details see file: Open Gaming License v1.0a.txt
+IS_FGC = false
+IS_FGU = true
 local USER_ISHOST = false
 
 local ActionDamage_applyDamage
@@ -25,16 +27,56 @@ local function isBlankSafe(s)
     return (string.gsub(s, "%s+", "") == "")
 end
 
--- Helper to safely get an actor from a node/string, preferring the modern getActor method.
-local function getActorSafe(v)
+function checkFGC()
+    if UtilityManager and UtilityManager.isClientFGU then
+        return not UtilityManager.isClientFGU()
+    end
+    if Session and Session.VersionMajor then
+        return Session.VersionMajor < 4
+    end
+    if Interface and Interface.getVersion then
+        local sVersion = tostring(Interface.getVersion() or "")
+        local sMajor = sVersion:match("^(%d+)")
+        local nMajor = tonumber(sMajor) or 0
+        return nMajor < 4
+    end
+    return false
+end
+
+-- Helper to safely get the previous result handler for a given action type.
+local function getResultHandlerSafe(sType)
+    if ActionsManager.getResultHandler then
+        return ActionsManager.getResultHandler(sType)
+    end
+    if sType == "save" and ActionSave and ActionSave.onSave then
+        return ActionSave.onSave
+    end
+    return nil
+end
+
+-- Helper to safely get an actor from a node/string, preferring the modern getActor method on FGU and resolveActor on FGC.
+-- Note: In FGC, ActorManager.getActor is a legacy 2-argument deprecated function (sActorOldType, v)
+-- that returns resolveActor(v). Calling it with 1 argument passes v as nil, returning nil.
+function getActorSafe(v)
+    if not v then return nil end
+    if IS_FGC or checkFGC() then
+        return ActorManager.resolveActor(v)
+    end
     if ActorManager.getActor then
         return ActorManager.getActor(v)
     end
     return ActorManager.resolveActor(v)
 end
 
--- Helper to safely get an actor's type and node, preferring modern non-deprecated methods.
-local function getTypeAndNodeSafe(v)
+-- Helper to safely get an actor's type and node, preferring modern non-deprecated methods on FGU and getTypeAndNode on FGC.
+function getTypeAndNodeSafe(v)
+    if not v then return nil, nil end
+    if IS_FGC or checkFGC() then
+        if ActorManager.getTypeAndNode then
+            return ActorManager.getTypeAndNode(v)
+        end
+        return ActorManager.getActorTypeAndNode(v)
+    end
     if ActorManager.isPC and ActorManager.getCreatureNode and ActorManager.getCTNode then
         local bIsPC = ActorManager.isPC(v)
         if bIsPC then
@@ -72,34 +114,38 @@ end
 local function applyDamageFinal(rSource, rTarget, rRoll, bSecret, sDamage, nTotal)
     if type(ActionDamage_applyDamage) == "function" then
         ActionDamage_applyDamage(rSource, rTarget, rRoll)
-    elseif ActionHealthD20 and type(ActionHealthD20.apply) == "function" then
+    elseif ActionHealthD20 and type(ActionHealthD20.apply) == "function" and ActionHealthD20.apply ~= applyDamage_v2 then
          ActionHealthD20.apply(rSource, rTarget, rRoll)
     elseif ActionDamage then
-        if type(ActionDamage.applyDamage) == "function" then
+        if type(ActionDamage.applyDamage) == "function" and ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
             ActionDamage.applyDamage(rSource, rTarget, rRoll)
-        elseif type(ActionDamage.apply) == "function" then
+        elseif type(ActionDamage.apply) == "function" and ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
             ActionDamage.apply(rSource, rTarget, rRoll)
         end
     end
 end
 
 function onInit()
-    USER_ISHOST = User.isHost()
+    IS_FGC = checkFGC()
+    IS_FGU = not IS_FGC
+    USER_ISHOST = (Session and Session.IsHost) or (User and User.isHost and User.isHost()) or false
 
-    -- Initialize upvalues on all instances (Host and Client)
-    if ActionHealthD20 and ActionHealthD20.apply then
+    -- Initialize upvalues safely without capturing our own wrappers
+    if ActionHealthD20 and ActionHealthD20.apply and ActionHealthD20.apply ~= applyDamage_v2 then
         ActionDamage_applyDamage = ActionHealthD20.apply
     elseif ActionDamage then
-        if ActionDamage.applyDamage then
+        if ActionDamage.applyDamage and ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
             ActionDamage_applyDamage = ActionDamage.applyDamage
-        elseif ActionDamage.apply then
+        elseif ActionDamage.apply and ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
             ActionDamage_applyDamage = ActionDamage.apply
         end
     end
 
-    -- Capture ruleset result handlers from ActionsManager (Host and Client)
-    -- This ensures we get the actual local functions even if they aren't in the global table.
-    ActionSave_onSave_Ruleset = ActionsManager.getResultHandler("save")
+    -- Capture ruleset result handlers safely (Host and Client)
+    local fExistingSave = getResultHandlerSafe("save")
+    if fExistingSave ~= onSaveNew then
+        ActionSave_onSave_Ruleset = fExistingSave
+    end
 
     -- Register result handlers on all instances
     ActionsManager.registerResultHandler("save", onSaveNew)
@@ -108,14 +154,23 @@ function onInit()
 		Comm.registerSlashHandler("uf", processChatCommand)
 		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
         
-        -- Hook damage functions to intercept damage rolls
+        -- Hook damage functions to intercept damage rolls with strict idempotency guards
         if ActionHealthD20 and ActionHealthD20.apply then
-            ActionHealthD20.apply = applyDamage_v2
+            if ActionHealthD20.apply ~= applyDamage_v2 then
+                ActionDamage_applyDamage = ActionHealthD20.apply
+                ActionHealthD20.apply = applyDamage_v2
+            end
         elseif ActionDamage then
             if ActionDamage.applyDamage then
-                ActionDamage.applyDamage = applyDamage_FGU
+                if ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
+                    ActionDamage_applyDamage = ActionDamage.applyDamage
+                    ActionDamage.applyDamage = applyDamage_v2
+                end
             elseif ActionDamage.apply then
-                ActionDamage.apply = applyDamage_FGU
+                if ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
+                    ActionDamage_applyDamage = ActionDamage.apply
+                    ActionDamage.apply = applyDamage_v2
+                end
             end
         end
     end

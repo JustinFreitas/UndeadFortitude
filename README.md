@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-Undead Fortitude v2.2.0, by Justin Freitas
+Undead Fortitude v2.8.1, by Justin Freitas
 
 ReadMe and Usage Notes
 
@@ -26,3 +26,9 @@ Changelist:
 - v2.1.1 - Changes to support new damage ruleset mechanism. Backward compatible with the older one.
 - v2.1.2 - Fix onSave wiring.
 - v2.2.0 - Use safe wrapper functions for getting actors and checking effects.
+- v2.3 - Modernize API calls with safe helpers and add nil guards for ruleset function hooks.
+- v2.4 - Upgrade to modern CoreRPG native functions (StringManager.isBlank, EffectManager.hasEffect) and implement safe helper patterns (getSaveSafe).
+- v2.5 - Resolve nil value error for ActionDamage_applyDamage by ensuring global initialization and adding robust fallback patterns.
+- v2.6 - Fix Advantage/Disadvantage summing bug and restore ruleset save handler passthrough.
+- v2.8 - Modernize actor resolution with non-deprecated ActorManager methods and add nil guards for damage/HP calculations.
+- v2.8.1 - Restore dual FGC/FGU compatibility: robust checkFGC() version detection handling Lua 5.1 string returns, fallback to ActionSave.onSave when ActionsManager.getResultHandler is nil, route getActorSafe() to ActorManager.resolveActor() and getTypeAndNodeSafe() to ActorManager.getTypeAndNode() on FGC, and add strict /reload idempotency guards to ActionHealthD20.apply / ActionDamage.applyDamage.

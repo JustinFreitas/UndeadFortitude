@@ -13,6 +13,29 @@ async function runTests() {
         -- Global mock setup
         _USER_ISHOST = true
 
+        UtilityManager = {}
+        Session = { IsHost = true, VersionMajor = 4 }
+        Interface = {}
+        local major, minor, patch = 4, 2, 0
+        local sVersionOverride = nil
+        function Interface.getVersion()
+            if sVersionOverride ~= nil then
+                return sVersionOverride
+            end
+            return major, minor, patch
+        end
+        function Interface.setVersion(ma, mi, pa)
+            sVersionOverride = nil
+            major, minor, patch = ma, mi, pa
+        end
+        function Interface.setVersionString(s)
+            sVersionOverride = s
+        end
+
+        ActionSave = {
+            onSave = function() end
+        }
+
         User = {
             isHost = function() return _USER_ISHOST == true end
         }
@@ -26,13 +49,29 @@ async function runTests() {
 
         ActorManager = {
             getActor = function(v) return v end,
-            resolveActor = function(v) return v end,
-            isPC = function(v) return v._isPC == true end,
+            resolveActor = function(v)
+                if type(v) == "table" then
+                    local res = {}
+                    for k, val in pairs(v) do res[k] = val end
+                    res.sResolved = true
+                    return res
+                end
+                return { sResolved = true, _path = tostring(v) }
+            end,
+            isPC = function(v) return v and v._isPC == true end,
             getCreatureNode = function(v) return v end,
             getCTNode = function(v) return v end,
+            getTypeAndNode = function(v)
+                if not v then return nil, nil end
+                return "ct", v
+            end,
+            getActorTypeAndNode = function(v)
+                if not v then return nil, nil end
+                return "ct_legacy", v
+            end,
             getDisplayName = function(v)
                 if type(v) == "table" then
-                    return v._data["name"] or v._name or "Unknown"
+                    return (v._data and v._data["name"]) or v._name or "Unknown"
                 end
                 return tostring(v)
             end,
@@ -608,6 +647,107 @@ async function runTests() {
                 assert(#ActionHealthD20.calls == 1 or #ActionDamage.calls == 1, "Damage should be applied after save")
                 local appliedRoll = ActionHealthD20.calls[1] and ActionHealthD20.calls[1].rRoll or ActionDamage.calls[1].rRoll
                 assert(appliedRoll.nTotal == 9, "Should apply 9 damage, got " .. tostring(appliedRoll.nTotal))
+            `
+        },
+        {
+            name: "checkFGC version detection permutations",
+            code: `
+                UtilityManager.isClientFGU = function() return true end
+                assert(checkFGC() == false, "FGU via UtilityManager should be false")
+
+                UtilityManager.isClientFGU = function() return false end
+                assert(checkFGC() == true, "FGC via UtilityManager should be true")
+
+                UtilityManager.isClientFGU = nil
+                Session.VersionMajor = 4
+                assert(checkFGC() == false, "FGU via Session.VersionMajor 4 should be false")
+
+                Session.VersionMajor = 3
+                assert(checkFGC() == true, "FGC via Session.VersionMajor 3 should be true")
+
+                Session.VersionMajor = nil
+                Interface.setVersionString("3.3.16")
+                assert(checkFGC() == true, "FGC string version '3.3.16' should be true")
+
+                Interface.setVersionString("4.1.2")
+                assert(checkFGC() == false, "FGU string version '4.1.2' should be false")
+
+                -- Restore defaults
+                UtilityManager.isClientFGU = function() return true end
+                Session.VersionMajor = 4
+                Interface.setVersion(4, 2, 0)
+                IS_FGC = false
+                IS_FGU = true
+            `
+        },
+        {
+            name: "getActorSafe FGC vs FGU routing and nil safety",
+            code: `
+                local mockNode = { _path = "ct.entry1", sName = "Zombie" }
+                
+                IS_FGC = false
+                local fguActor = getActorSafe(mockNode)
+                assert(fguActor.sResolved == nil, "FGU should call ActorManager.getActor")
+
+                IS_FGC = true
+                local fgcActor = getActorSafe(mockNode)
+                assert(fgcActor.sResolved == true, "FGC should call ActorManager.resolveActor")
+
+                assert(getActorSafe(nil) == nil, "nil should safely return nil")
+
+                IS_FGC = false
+                IS_FGU = true
+            `
+        },
+        {
+            name: "getTypeAndNodeSafe FGC vs FGU routing and nil safety",
+            code: `
+                local mockNode = { _path = "ct.entry1", sName = "Zombie" }
+
+                IS_FGC = true
+                local sTypeFGC, nodeFGC = getTypeAndNodeSafe(mockNode)
+                assert(sTypeFGC == "ct", "FGC should call ActorManager.getTypeAndNode")
+
+                ActorManager.getTypeAndNode = nil
+                local sTypeLegacy, nodeLegacy = getTypeAndNodeSafe(mockNode)
+                assert(sTypeLegacy == "ct_legacy", "FGC should fall back to getActorTypeAndNode")
+
+                -- Restore
+                ActorManager.getTypeAndNode = function(v) if not v then return nil, nil end return "ct", v end
+
+                local sTypeNil, nodeNil = getTypeAndNodeSafe(nil)
+                assert(sTypeNil == nil and nodeNil == nil, "nil should return nil, nil")
+
+                IS_FGC = false
+                IS_FGU = true
+            `
+        },
+        {
+            name: "onInit idempotency and /reload recursion safety",
+            code: `
+                clearMocks()
+                _USER_ISHOST = true
+
+                -- Call onInit 3 times simulating /reload
+                onInit()
+                onInit()
+                onInit()
+
+                -- Verify ActionsManager save handler registration is onSaveNew
+                assert(ActionsManager._handlers["save"] == onSaveNew, "save handler should be onSaveNew")
+
+                -- Verify ActionHealthD20.apply is hooked to applyDamage_v2
+                assert(ActionHealthD20.apply == applyDamage_v2, "ActionHealthD20.apply should be applyDamage_v2")
+
+                -- Now simulate a non-fortitude damage roll to ensure applyDamage_v2 passes through to ActionDamage_applyDamage without infinite recursion
+                local nonFortSource = { _name = "Hero" }
+                local nonFortTarget = { _name = "Goblin", _data = {} }
+                local nonFortRoll = { sDesc = "[DAMAGE] piercing", nTotal = 5, bSecret = false }
+                
+                ActionHealthD20.calls = {}
+                ActionDamage.calls = {}
+                applyDamage_v2(nonFortSource, nonFortTarget, nonFortRoll)
+                assert(#ActionHealthD20.calls == 1 or #ActionDamage.calls == 1, "applyDamage_v2 should execute cleanly without recursion")
             `
         }
     ];
