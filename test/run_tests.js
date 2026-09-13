@@ -126,8 +126,18 @@ async function runTests() {
             table.insert(ActionHealthD20.calls, { rSource = rSource, rTarget = rTarget, rRoll = rRoll })
         end
 
-        local function originalActionDamageApplyDamage(rSource, rTarget, rRoll)
-            table.insert(ActionDamage.calls, { rSource = rSource, rTarget = rTarget, rRoll = rRoll })
+        local function originalActionDamageApplyDamage(rSource, rTarget, p3, p4, p5)
+            table.insert(ActionDamage.calls, {
+                rSource = rSource,
+                rTarget = rTarget,
+                p3 = p3,
+                p4 = p4,
+                p5 = p5,
+                rRoll = (type(p3) == "table" and p3 or nil),
+                bSecret = (type(p3) ~= "table" and p3 or (p3 and p3.bSecret)),
+                sDamage = (type(p3) ~= "table" and p4 or (p3 and p3.sDesc)),
+                nTotal = (type(p3) ~= "table" and p5 or (p3 and p3.nTotal))
+            })
         end
 
         ActionHealthD20 = {
@@ -144,8 +154,11 @@ async function runTests() {
         ActionsManager = {
             _handlers = {},
             _original_handlers = {
-                save = function() end
+                save = function(rSource, rTarget, rRoll)
+                    table.insert(ActionsManager.save_calls, { rSource = rSource, rTarget = rTarget, rRoll = rRoll })
+                end
             },
+            save_calls = {},
             getResultHandler = function(sType)
                 return ActionsManager._original_handlers[sType]
             end,
@@ -274,6 +287,7 @@ async function runTests() {
             ActionDamage.apply = originalActionDamageApplyDamage
             ActionsManager.outputs = {}
             ActionsManager.rolls = {}
+            ActionsManager.save_calls = {}
             Comm.chat_messages = {}
             ModifierStack.wasReset = false
         end
@@ -748,6 +762,121 @@ async function runTests() {
                 ActionDamage.calls = {}
                 applyDamage_v2(nonFortSource, nonFortTarget, nonFortRoll)
                 assert(#ActionHealthD20.calls == 1 or #ActionDamage.calls == 1, "applyDamage_v2 should execute cleanly without recursion")
+            `
+        },
+        {
+            name: "applyDamage_v2 handles FGC 5-argument damage application",
+            code: `
+                clearMocks()
+                _USER_ISHOST = true
+                IS_FGC = true
+                IS_FGU = false
+
+                -- Configure ActionDamage as the active damage handler (FGC has no ActionHealthD20)
+                local savedHealth = ActionHealthD20
+                ActionHealthD20 = nil
+
+                onInit()
+
+                local source = { _name = "orc", _data = { name = "Orc" } }
+                local targetZombie = {
+                    _name = "zombie",
+                    _path = "combattracker.list.id-00001",
+                    _data = {
+                        name = "Zombie",
+                        hptotal = 20,
+                        hptemp = 0,
+                        wounds = 10
+                    },
+                    _effects = {},
+                    _con_save = { mod = 2 },
+                    _children = {
+                        traits = {
+                            ["trait-1"] = {
+                                _data = {
+                                    name = "Undead Fortitude"
+                                }
+                            }
+                        }
+                    }
+                }
+                db_store["combattracker.list.id-00001"] = targetZombie
+
+                -- Call with FGC 5-argument signature: (rSource, rTarget, bSecret, sDamage, nTotal)
+                -- 10 damage drops wounds 10/20 to 0 HP -> triggers Undead Fortitude
+                applyDamage_v2(source, targetZombie, false, "[DAMAGE] slashing", 10)
+
+                assert(#ActionDamage.calls == 0, "Damage should be intercepted for Fortitude roll")
+                assert(#ActionsManager.rolls == 1, "Con save should be rolled")
+                assert(ActionsManager.rolls[1].rRoll.bUndeadFortitude == "true", "Roll should be flagged as Undead Fortitude")
+                assert(ActionsManager.rolls[1].rRoll.nDamage == 10, "Roll should carry 10 damage")
+
+                -- Simulate non-lethal damage on non-fortitude target via FGC 5-arg signature
+                local targetGoblin = {
+                    _name = "goblin",
+                    _path = "combattracker.list.id-00002",
+                    _data = {
+                        name = "Goblin",
+                        hptotal = 15,
+                        hptemp = 0,
+                        wounds = 0
+                    },
+                    _effects = {},
+                    _children = {}
+                }
+                db_store["combattracker.list.id-00002"] = targetGoblin
+
+                applyDamage_v2(source, targetGoblin, false, "[DAMAGE] piercing", 4)
+                assert(#ActionDamage.calls == 1, "Non-fortitude damage should pass through to ActionDamage.applyDamage")
+                assert(ActionDamage.calls[1].p5 == 4 or ActionDamage.calls[1].nTotal == 4, "Should pass 4 damage")
+                assert(ActionDamage.calls[1].p4 == "[DAMAGE] piercing" or ActionDamage.calls[1].sDamage == "[DAMAGE] piercing", "Should pass piercing damage desc")
+                assert(ActionDamage.calls[1].p3 == false or ActionDamage.calls[1].bSecret == false, "Should pass bSecret = false")
+
+                -- Restore
+                ActionHealthD20 = savedHealth
+                IS_FGC = false
+                IS_FGU = true
+            `
+        },
+        {
+            name: "onSaveNew passes standard saves to ruleset handler but bypasses it for fortitude saves",
+            code: `
+                clearMocks()
+                _USER_ISHOST = true
+                onInit()
+
+                local source = { _name = "hero", _data = { name = "Hero" } }
+                local target = { _name = "zombie", _data = { name = "Zombie" } }
+
+                -- 1. Standard ruleset save (bUndeadFortitude == nil)
+                local standardRoll = {
+                    sType = "save",
+                    sDesc = "Dexterity Save",
+                    nTotal = 16
+                }
+                onSaveNew(source, target, standardRoll)
+                assert(#ActionsManager.save_calls == 1, "Standard save should pass through to ruleset handler")
+                assert(ActionsManager.save_calls[1].rRoll == standardRoll, "Ruleset handler should receive original roll")
+                assert(#ActionsManager.outputs == 0, "No custom fortitude output should be emitted for standard saves")
+
+                -- 2. Fortitude save (bUndeadFortitude ~= nil)
+                ActionsManager.save_calls = {}
+                local fortitudeRoll = {
+                    bUndeadFortitude = "true",
+                    sTrimmedFortitudeTraitNameForSave = "Undead Fortitude",
+                    nDamage = 10,
+                    sDamage = "[DAMAGE] slashing =10",
+                    nTotalHP = 20,
+                    nTempHP = 0,
+                    nWounds = 10,
+                    sModDC = "5",
+                    sStaticDC = "nil",
+                    nTotalOverride = 15 -- Save result is 15 (DC 5 + 10 = 15) -> Success!
+                }
+                onSaveNew(source, target, fortitudeRoll)
+                assert(#ActionsManager.save_calls == 0, "Ruleset handler should NOT be called for fortitude save (prevent duplicate output)")
+                assert(#ActionsManager.outputs == 1, "Custom fortitude output should be emitted")
+                assert(string.find(ActionsManager.outputs[1].msgLong.text, "%[SUCCESS%]"), "Should output SUCCESS")
             `
         }
     ];

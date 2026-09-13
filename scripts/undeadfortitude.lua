@@ -111,16 +111,36 @@ local function getSaveSafe(nodeActor, sSave)
 end
 
 -- Helper to safely call the ruleset's damage application function.
-local function applyDamageFinal(rSource, rTarget, rRoll, bSecret, sDamage, nTotal)
-    if type(ActionDamage_applyDamage) == "function" then
-        ActionDamage_applyDamage(rSource, rTarget, rRoll)
-    elseif ActionHealthD20 and type(ActionHealthD20.apply) == "function" and ActionHealthD20.apply ~= applyDamage_v2 then
-         ActionHealthD20.apply(rSource, rTarget, rRoll)
-    elseif ActionDamage then
-        if type(ActionDamage.applyDamage) == "function" and ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
-            ActionDamage.applyDamage(rSource, rTarget, rRoll)
-        elseif type(ActionDamage.apply) == "function" and ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
-            ActionDamage.apply(rSource, rTarget, rRoll)
+local function applyDamageFinal(rSource, rTarget, p3, p4, p5)
+    if type(p3) == "table" then
+        -- FGU or re-applying from onSaveNew where p3 is rRoll
+        local rRoll = p3
+        if type(ActionDamage_applyDamage) == "function" then
+            if IS_FGC or checkFGC() then
+                ActionDamage_applyDamage(rSource, rTarget, rRoll.bSecret, rRoll.sDesc, rRoll.nTotal)
+            else
+                ActionDamage_applyDamage(rSource, rTarget, rRoll)
+            end
+        elseif ActionHealthD20 and type(ActionHealthD20.apply) == "function" and ActionHealthD20.apply ~= applyDamage_v2 then
+            ActionHealthD20.apply(rSource, rTarget, rRoll)
+        elseif ActionDamage then
+            if type(ActionDamage.applyDamage) == "function" and ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
+                if IS_FGC or checkFGC() then
+                    ActionDamage.applyDamage(rSource, rTarget, rRoll.bSecret, rRoll.sDesc, rRoll.nTotal)
+                else
+                    ActionDamage.applyDamage(rSource, rTarget, rRoll)
+                end
+            elseif type(ActionDamage.apply) == "function" and ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
+                ActionDamage.apply(rSource, rTarget, rRoll)
+            end
+        end
+    else
+        -- FGC: p3 is bSecret, p4 is sDamage, p5 is nTotal
+        local bSecret, sDamage, nTotal = p3, p4, p5
+        if type(ActionDamage_applyDamage) == "function" then
+            ActionDamage_applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
+        elseif ActionDamage and type(ActionDamage.applyDamage) == "function" and ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
+            ActionDamage.applyDamage(rSource, rTarget, bSecret, sDamage, nTotal)
         end
     end
 end
@@ -235,12 +255,11 @@ end
 
 
 function onSaveNew(rSource, rTarget, rRoll)
-    -- Passthrough to ruleset handler
-    if type(ActionSave_onSave_Ruleset) == "function" then
-        ActionSave_onSave_Ruleset(rSource, rTarget, rRoll)
-    end
-
     if rRoll.bUndeadFortitude == nil then
+        -- Passthrough to ruleset handler for standard saves
+        if type(ActionSave_onSave_Ruleset) == "function" then
+            ActionSave_onSave_Ruleset(rSource, rTarget, rRoll)
+        end
         return
     end
 
@@ -361,8 +380,8 @@ function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rRoll)
 		nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
 		nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
 		nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
-	elseif sTargetNodeType == "ct" and ActorManager.isRecordType(nodeTarget, "vehicle") then
-		if (rRoll.sSubtargetPath or "") ~= "" then
+	elseif sTargetNodeType == "ct" and ActorManager.isRecordType and ActorManager.isRecordType(nodeTarget, "vehicle") then
+		if rRoll and type(rRoll) == "table" and (rRoll.sSubtargetPath or "") ~= "" then
 			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0)
 			nWounds = DB.getValue(DB.getPath(rRoll.sSubtargetPath, WOUNDS), 0)
 			nTempHP = 0
@@ -480,41 +499,48 @@ end
 
 
 function applyDamage_FGU(rSource, rTarget, rRoll)
-	local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(rTarget)
-	if not nodeTarget then return end
-
-    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
-     local bFortitudeTriggered
-    if aFortitudeData then
-        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rSource, rTarget, false)
-    end
-
-    if not bFortitudeTriggered then
-        applyDamageFinal(rSource, rTarget, rRoll)
-    end
+    applyDamage_v2(rSource, rTarget, rRoll)
 end
 
-function applyDamage_v2(rSource, rTarget, rRoll)
+function applyDamage_v2(rSource, rTarget, p3, p4, p5)
 	local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(rTarget)
 	if not nodeTarget then return end
 
-    -- We only intercept if it's actually damage (ActionHealthD20.apply handles heals too!)
+    local bSecret, sDamage, nTotal
     local isDamageRoll = true
-    if rRoll and rRoll.sDesc then
-        if rRoll.sDesc:match("%[HEAL") or rRoll.sDesc:match("%[RECOVERY") or rRoll.sDesc:match("%[FHEAL") or rRoll.sDesc:match("%[REGEN") then
+
+    if type(p3) == "table" then
+        -- FGU: p3 is rRoll
+        local rRoll = p3
+        if rRoll.sDesc then
+            if rRoll.sDesc:match("%[HEAL") or rRoll.sDesc:match("%[RECOVERY") or rRoll.sDesc:match("%[FHEAL") or rRoll.sDesc:match("%[REGEN") then
+                isDamageRoll = false
+            end
+        end
+        if (rRoll.nTotal or 0) < 0 then
             isDamageRoll = false
-        elseif (rRoll.nTotal or 0) < 0 then
+        end
+        bSecret = rRoll.bSecret
+        sDamage = rRoll.sDesc or ""
+        nTotal = rRoll.nTotal or 0
+    else
+        -- FGC: p3 is bSecret, p4 is sDamage, p5 is nTotal
+        bSecret = p3
+        sDamage = p4 or ""
+        nTotal = tonumber(p5) or 0
+        if nTotal < 0 then
             isDamageRoll = false
         end
     end
 
-    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRoll)
-    local bFortitudeTriggered
+    local rRollHealth = (type(p3) == "table") and p3 or { sDesc = sDamage, nTotal = nTotal }
+    local aFortitudeData = hasFortitudeTrait(sTargetNodeType, nodeTarget, rRollHealth)
+    local bFortitudeTriggered = false
     if aFortitudeData and isDamageRoll then
-        bFortitudeTriggered = processFortitude(aFortitudeData, rRoll.nTotal, rRoll.sDesc, rSource, rTarget, rRoll.bSecret)
+        bFortitudeTriggered = processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSecret)
     end
 
     if not bFortitudeTriggered then
-        applyDamageFinal(rSource, rTarget, rRoll)
+        applyDamageFinal(rSource, rTarget, p3, p4, p5)
     end
 end
