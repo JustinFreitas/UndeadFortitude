@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-Undead Fortitude v2.8.2, by Justin Freitas
+Undead Fortitude v2.8.3, by Justin Freitas
 
 ReadMe and Usage Notes
 
@@ -33,3 +33,4 @@ Changelist:
 - v2.8 - Modernize actor resolution with non-deprecated ActorManager methods and add nil guards for damage/HP calculations.
 - v2.8.1 - Restore dual FGC/FGU compatibility: robust checkFGC() version detection handling Lua 5.1 string returns, fallback to ActionSave.onSave when ActionsManager.getResultHandler is nil, route getActorSafe() to ActorManager.resolveActor() and getTypeAndNodeSafe() to ActorManager.getTypeAndNode() on FGC, and add strict /reload idempotency guards to ActionHealthD20.apply / ActionDamage.applyDamage.
 - v2.8.2 - Fix FGC 5E ActionDamage.applyDamage 5-argument crash by supporting polymorphic (rSource, rTarget, p3, p4, p5) damage signatures, and guard onSaveNew to prevent duplicate save message output.
+- v2.8.3 - Detect modern FGU native 5E Fortitude support (ActionSave.handleFortitudeTraitOnSave) and defer to native ruleset to avoid duplicate CON save rolls.

@@ -878,6 +878,60 @@ async function runTests() {
                 assert(#ActionsManager.outputs == 1, "Custom fortitude output should be emitted")
                 assert(string.find(ActionsManager.outputs[1].msgLong.text, "%[SUCCESS%]"), "Should output SUCCESS")
             `
+        },
+        {
+            name: "applyDamage_v2 defers to native Fortitude when ActionSave.handleFortitudeTraitOnSave is present",
+            code: `
+                clearMocks()
+
+                -- Simulate modern 5E ruleset with native fortitude handling
+                ActionSave.handleFortitudeTraitOnSave = function() end
+
+                local source = {
+                    _name = "orc",
+                    _path = "combattracker.list.id-00002",
+                    _data = { name = "Orc" }
+                }
+                local target = {
+                    _name = "zombie",
+                    _path = "combattracker.list.id-00001",
+                    _data = {
+                        name = "Zombie",
+                        hp = 22,
+                        wounds = 15
+                    },
+                    _children = {
+                        traits = {
+                            ["id-00001"] = {
+                                _data = {
+                                    name = "Undead Fortitude",
+                                    desc = "If damage reduces the zombie to 0 hit points, it must make a Constitution saving throw with a DC of 5 + the damage taken."
+                                }
+                            }
+                        }
+                    }
+                }
+
+                -- Lethal damage (10 dmg with 7 HP remaining)
+                local roll = {
+                    sType = "damage",
+                    sDesc = "[DAMAGE] slashing =10",
+                    nTotal = 10,
+                    bSecret = false
+                }
+
+                -- When native fortitude is present, applyDamage_v2 should NOT intercept
+                -- and should pass through directly to applyDamageFinal
+                applyDamage_v2(source, target, roll)
+
+                -- Intercept would have set #ActionsManager.rolls == 1 without applying damage.
+                -- Native passthrough applies damage directly to ruleset handler.
+                assert(#ActionsManager.rolls == 0, "Should NOT trigger custom fortitude save roll when ruleset natively supports it")
+                assert(#ActionHealthD20.calls == 1 or #ActionDamage.calls == 1, "Should pass through to ruleset damage handler")
+
+                -- Cleanup
+                ActionSave.handleFortitudeTraitOnSave = nil
+            `
         }
     ];
 

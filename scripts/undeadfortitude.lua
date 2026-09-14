@@ -174,22 +174,28 @@ function onInit()
 		Comm.registerSlashHandler("uf", processChatCommand)
 		Comm.registerSlashHandler("undeadfortitude", processChatCommand)
         
-        -- Hook damage functions to intercept damage rolls with strict idempotency guards
-        if ActionHealthD20 and ActionHealthD20.apply then
-            if ActionHealthD20.apply ~= applyDamage_v2 then
-                ActionDamage_applyDamage = ActionHealthD20.apply
-                ActionHealthD20.apply = applyDamage_v2
-            end
-        elseif ActionDamage then
-            if ActionDamage.applyDamage then
-                if ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
-                    ActionDamage_applyDamage = ActionDamage.applyDamage
-                    ActionDamage.applyDamage = applyDamage_v2
+        -- Hook damage functions to intercept damage rolls with strict idempotency guards.
+        -- On modern FGU (July 2026+), 5E natively handles Fortitude traits via ActionSave.handleFortitudeTraitOnSave
+        -- and ActionDamage.handleFortitudeTraitOnDamage. If the native ruleset already implements it,
+        -- we do NOT hook damage, avoiding duplicate CON save rolls.
+        local bNativeFortitude = (ActionSave and ActionSave.handleFortitudeTraitOnSave ~= nil)
+        if not bNativeFortitude then
+            if ActionHealthD20 and ActionHealthD20.apply then
+                if ActionHealthD20.apply ~= applyDamage_v2 then
+                    ActionDamage_applyDamage = ActionHealthD20.apply
+                    ActionHealthD20.apply = applyDamage_v2
                 end
-            elseif ActionDamage.apply then
-                if ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
-                    ActionDamage_applyDamage = ActionDamage.apply
-                    ActionDamage.apply = applyDamage_v2
+            elseif ActionDamage then
+                if ActionDamage.applyDamage then
+                    if ActionDamage.applyDamage ~= applyDamage_v2 and ActionDamage.applyDamage ~= applyDamage_FGU then
+                        ActionDamage_applyDamage = ActionDamage.applyDamage
+                        ActionDamage.applyDamage = applyDamage_v2
+                    end
+                elseif ActionDamage.apply then
+                    if ActionDamage.apply ~= applyDamage_v2 and ActionDamage.apply ~= applyDamage_FGU then
+                        ActionDamage_applyDamage = ActionDamage.apply
+                        ActionDamage.apply = applyDamage_v2
+                    end
                 end
             end
         end
@@ -503,6 +509,10 @@ function applyDamage_FGU(rSource, rTarget, rRoll)
 end
 
 function applyDamage_v2(rSource, rTarget, p3, p4, p5)
+    if ActionSave and ActionSave.handleFortitudeTraitOnSave then
+        return applyDamageFinal(rSource, rTarget, p3, p4, p5)
+    end
+
 	local sTargetNodeType, nodeTarget = getTypeAndNodeSafe(rTarget)
 	if not nodeTarget then return end
 
