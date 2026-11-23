@@ -110,6 +110,46 @@ local function getSaveSafe(nodeActor, sSave)
     return 0, false, false, ""
 end
 
+-- Helper to safely call the ruleset's save roll execution function.
+local function rollSaveSafe(rSource, rTarget, rRoll)
+    if ActionsManager and ActionsManager.performAction then
+        ActionsManager.performAction(nil, rSource, rRoll)
+    elseif ActionsManager and ActionsManager.applyModifiersAndRoll then
+        ActionsManager.applyModifiersAndRoll(rSource, rTarget, false, rRoll)
+    end
+end
+
+-- Helper to distribute capped damage across [TYPE: ... (...=N)] clauses without breaking ActionHealthD20.applyDecodeDamage sum validation.
+function capDamageDescClauses(sDamage, nDamageToApply)
+    if not sDamage then
+        return ""
+    end
+    local bHasTypeClauses = false
+    local nRemaining = math.max(0, tonumber(nDamageToApply) or 0)
+    local sResult = string.gsub(sDamage, "(%[TYPE: [^(]* %([^=]+%=)(%-?%d+)(%)%])", function(sPrefix, sVal, sSuffix)
+        bHasTypeClauses = true
+        local nClauseVal = math.max(0, tonumber(sVal) or 0)
+        local nAlloc = math.min(nClauseVal, nRemaining)
+        nRemaining = nRemaining - nAlloc
+        return sPrefix .. tostring(nAlloc) .. sSuffix
+    end)
+    if bHasTypeClauses then
+        if nRemaining > 0 then
+            local bAdded = false
+            sResult = string.gsub(sResult, "(%[TYPE: [^(]* %([^=]+%=)(%-?%d+)(%)%])", function(sPrefix, sVal, sSuffix)
+                if not bAdded then
+                    bAdded = true
+                    local nClauseVal = tonumber(sVal) or 0
+                    return sPrefix .. tostring(nClauseVal + nRemaining) .. sSuffix
+                end
+                return sPrefix .. sVal .. sSuffix
+            end)
+        end
+        return sResult
+    end
+    return string.gsub(sDamage, "=%-?%d+", "=" .. tostring(nDamageToApply))
+end
+
 -- Helper to safely call the ruleset's damage application function.
 local function applyDamageFinal(rSource, rTarget, p3, p4, p5)
     if type(p3) == "table" then
@@ -324,7 +364,7 @@ function onSaveNew(rSource, rTarget, rRoll)
         -- Undead Fortitude save was made!
         -- Calculate specific damage amount needed to leave exactly 1 HP.
         local nDamageToApply = nAllHP - tonumber(rRoll.nWounds or 0) - 1
-        local sDamage = string.gsub(rRoll.sDamage, "=%-?%d+", "=" .. nDamageToApply)
+        local sDamage = capDamageDescClauses(rRoll.sDamage, nDamageToApply)
         local rDamageRoll = {
             sType = "damage",
             sDesc = sDamage,
@@ -382,10 +422,6 @@ function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rRoll)
 		nTotalHP = DB.getValue(nodeTarget, HP_TOTAL, 0)
 		nTempHP = DB.getValue(nodeTarget, HP_TEMPORARY, 0)
 		nWounds = DB.getValue(nodeTarget, HP_WOUNDS, 0)
-    elseif sTargetNodeType == "ct" then
-		nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
-		nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
-		nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
 	elseif sTargetNodeType == "ct" and ActorManager.isRecordType and ActorManager.isRecordType(nodeTarget, "vehicle") then
 		if rRoll and type(rRoll) == "table" and (rRoll.sSubtargetPath or "") ~= "" then
 			nTotalHP = DB.getValue(DB.getPath(rRoll.sSubtargetPath, "hp"), 0)
@@ -396,6 +432,10 @@ function getTargetHealthData_FGU(sTargetNodeType, nodeTarget, rRoll)
 			nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
 			nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
 		end
+    elseif sTargetNodeType == "ct" then
+		nTotalHP = DB.getValue(nodeTarget, HPTOTAL, 0)
+		nTempHP = DB.getValue(nodeTarget, HPTEMP, 0)
+		nWounds = DB.getValue(nodeTarget, WOUNDS, 0)
 	end
 
     return {
@@ -497,7 +537,7 @@ function processFortitude(aFortitudeData, nTotal, sDamage, rSource, rTarget, bSe
         end
 
         ModifierStack.reset()  -- Modifiers were being applied to the save from the original dmg roll.  Clear it before save.
-        ActionsManager.applyModifiersAndRoll(rTarget, rTarget, false, rRoll)
+        rollSaveSafe(rTarget, rTarget, rRoll)
         return true
     end
 end

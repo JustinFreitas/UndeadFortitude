@@ -177,6 +177,14 @@ async function runTests() {
                     msgShort = msgShort
                 })
             end,
+            performAction = function(draginfo, rActor, rRoll)
+                table.insert(ActionsManager.rolls, {
+                    rSource = rActor,
+                    rTarget = rActor,
+                    bMulti = false,
+                    rRoll = rRoll
+                })
+            end,
             applyModifiersAndRoll = function(rSource, rTarget, bMulti, rRoll)
                 table.insert(ActionsManager.rolls, {
                     rSource = rSource,
