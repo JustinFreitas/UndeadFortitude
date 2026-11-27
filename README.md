@@ -2,7 +2,7 @@
 
 https://github.com/JustinFreitas/UndeadFortitude
 
-Undead Fortitude v2.8.4, by Justin Freitas
+Undead Fortitude v2.8.5, by Justin Freitas
 
 ReadMe and Usage Notes
 
@@ -35,3 +35,4 @@ Changelist:
 - v2.8.2 - Fix FGC 5E ActionDamage.applyDamage 5-argument crash by supporting polymorphic (rSource, rTarget, p3, p4, p5) damage signatures, and guard onSaveNew to prevent duplicate save message output.
 - v2.8.3 - Detect modern FGU native 5E Fortitude support (ActionSave.handleFortitudeTraitOnSave) and defer to native ruleset to avoid duplicate CON save rolls.
 - v2.8.4 - Fix multi-type damage clause capping (proportional distribution across damage types to prevent damage total mismatch), route saving throws through ActionsManager.performAction for standard ruleset action flow, and fix vehicle CT actor lookup.
+- v2.8.5 - Adopt FGU v5.1.16 `hasMenuItem` dynamic radial menu slot selection on Combat Tracker entries (prioritizing slot 8) to prevent slot collisions with other extensions (with fallback for older builds and 3-arg `super.onMenuSelection` forwarding).
